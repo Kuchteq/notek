@@ -16,6 +16,9 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:9001").await?;
     println!("Listening on 127.0.0.1:9001");
 
+    let content = fs::read_to_string("foo.txt").unwrap();
+    let doc = Doc::new(content.to_string());
+    println!("{:#?}", doc.len());
     while let Ok((stream, _)) = listener.accept().await {
         tokio::spawn(handle_connection(stream));
     }

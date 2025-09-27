@@ -1,6 +1,6 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeMap};
 
 const LBASE: u32 = u32::MAX; // maximum identifier value
 /// A single position in a PID
@@ -112,31 +112,31 @@ pub struct Pair {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Doc {
-    pairs: Vec<Pair>,
+    content: BTreeMap<Pid, char>,
     site: u8,
 }
 
 impl Doc {
     pub fn new(content: String) -> Doc {
-        let beg = Pair {
-            pid: Pid(vec![Pos { ident: 0, site: 0 }]),
-            atom: '_',
-        };
-        let end = Pair {
-            pid: Pid(vec![Pos {
+        let beg = (Pid(vec![Pos {
+                ident: 0,
+                site: 0,
+            }]), '_');
+        let end = (Pid(vec![Pos {
                 ident: LBASE,
                 site: 0,
-            }]),
-            atom: '_',
-        };
+            }]), '_');
 
         let mut d = Doc {
-            pairs: vec![beg, end],
+            content: BTreeMap::from([beg.clone(), end.clone()]),
             site: 1,
         };
+        let mut left = beg.0.clone();
 
         for c in content.chars() {
-            d.insert_idx(d.len() - 2, c);
+            let pid = generate_between_pids(&left, &end.0, 1);
+            d.content.insert(pid.clone(), c);
+            left = pid;
         }
         d
     }
@@ -149,48 +149,45 @@ impl Doc {
     //     return 0;
     // }
     //
-    pub fn index(&self, pid: &Pid) -> (usize, bool) {
-        let mut search_scope: &[Pair] = &self.pairs;
-        let mut off = 0;
 
-        loop {
-            if search_scope.is_empty() {
-                return (off, false);
-            }
-
-            let split_point = search_scope.len() / 2;
-            let mid = &search_scope[split_point].pid;
-
-            match pid.cmp(mid) {
-                Ordering::Equal => return (off + split_point, true),
-                Ordering::Less => {
-                    search_scope = &search_scope[..split_point]; // left half
-                }
-                Ordering::Greater => {
-                    off += split_point + 1;
-                    search_scope = &search_scope[split_point + 1..];
-                }
-            }
-        }
-    }
+    // pub fn index(&self, pid: &Pid) -> (usize, bool) {
+    //     let mut search_scope: &[Pair] = &self.content;
+    //     let mut off = 0;
+    //
+    //     loop {
+    //         if search_scope.is_empty() {
+    //             return (off, false);
+    //         }
+    //
+    //         let split_point = search_scope.len() / 2;
+    //         let mid = &search_scope[split_point].pid;
+    //
+    //         match pid.cmp(mid) {
+    //             Ordering::Equal => return (off + split_point, true),
+    //             Ordering::Less => {
+    //                 search_scope = &search_scope[..split_point]; // left half
+    //             }
+    //             Ordering::Greater => {
+    //                 off += split_point + 1;
+    //                 search_scope = &search_scope[split_point + 1..];
+    //             }
+    //         }
+    //     }
+    // }
 
     fn insert(&mut self, pid: &Pid, c: char) {}
 
-    pub fn insert_idx(&mut self, idx: usize, c: char) {
-        let l = &self.pairs[idx].pid;
-        let r = &self.pairs[idx + 1].pid;
-        let p = generate_between_pids(l, r, 1);
-        let p = Pair { pid: p, atom: c };
-        self.pairs.insert(idx + 1, p)
-    }
+    // pub fn insert_idx(&mut self, idx: usize, c: char) {
+    //     let l = &self.content[idx].pid;
+    //     let r = &self.content[idx + 1].pid;
+    //     let p = generate_between_pids(l, r, 1);
+    //     let p = Pair { pid: p, atom: c };
+    //     self.content.insert(idx + 1, p)
+    // }
     pub fn to_string(&self) -> String {
-        let mut s = String::new();
-        for p in &self.pairs {
-            s.push(p.atom);
-        }
-        s
+        self.content.values().collect()
     }
     pub fn len(&self) -> usize {
-        return self.pairs.len();
+        return self.content.len();
     }
 }
