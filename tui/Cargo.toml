@@ -1,0 +1,16 @@
+[package]
+name = "tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+algos = { path = "../algos" }
+crossterm = "0.28.1"
+ratatui = "0.29.0"
+color-eyre = "0.6.3"
+bincode = { version = "1" }
+anyhow = "1.0.100"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.28.0"
+futures = "0.3.31"

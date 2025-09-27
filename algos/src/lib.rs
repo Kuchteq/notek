@@ -1,0 +1,196 @@
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+
+const LBASE: u32 = u32::MAX; // maximum identifier value
+/// A single position in a PID
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Pos {
+    ident: u32,
+    site: u8,
+}
+
+impl PartialEq for Pos {
+    fn eq(&self, other: &Self) -> bool {
+        self.ident == other.ident && self.site == other.site
+    }
+}
+impl Eq for Pos {}
+
+impl PartialOrd for Pos {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Pos {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.ident.cmp(&other.ident) {
+            Ordering::Equal => self.site.cmp(&other.site),
+            ord => ord,
+        }
+    }
+}
+
+/// A PID is a vector of positions
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pid(Vec<Pos>);
+
+impl PartialOrd for Pid {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Pid {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Lexicographic comparison of positions
+        for (a, b) in self.0.iter().zip(other.0.iter()) {
+            match a.cmp(b) {
+                Ordering::Equal => continue,
+                non_eq => return non_eq,
+            }
+        }
+        // If all common prefix equal → shorter wins
+        self.0.len().cmp(&other.0.len())
+    }
+}
+
+/// Generate a PID between two existing PIDs
+pub fn generate_between_pids(lp: &Pid, rp: &Pid, site_id: u8) -> Pid {
+    let mut p = Vec::new();
+
+    let max_depth = lp.0.len().max(rp.0.len());
+
+    for i in 0..max_depth {
+        let l = lp.0.get(i).cloned().unwrap_or(Pos { ident: 0, site: 0 });
+        let r = rp.0.get(i).cloned().unwrap_or(Pos {
+            ident: LBASE,
+            site: u8::MAX,
+        });
+
+        if l == r {
+            p.push(l);
+            continue;
+        }
+
+        if l.ident == r.ident {
+            // same ident, different site → site_id tie-breaker
+            p.push(Pos {
+                ident: l.ident,
+                site: site_id,
+            });
+            return Pid(p);
+        }
+
+        let d = r.ident.saturating_sub(l.ident);
+        if d > 1 {
+            let mut rng = rand::rng();
+            let new_ident = rng.random_range(l.ident + 1..r.ident);
+            p.push(Pos {
+                ident: new_ident,
+                site: site_id,
+            });
+            return Pid(p);
+        } else {
+            p.push(l);
+        }
+    }
+
+    // If no gap found, extend depth
+    p.push(Pos {
+        ident: LBASE / 2,
+        site: site_id,
+    });
+
+    Pid(p)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Pair {
+    pid: Pid,
+    atom: char,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Doc {
+    pairs: Vec<Pair>,
+    site: u8,
+}
+
+impl Doc {
+    pub fn new(content: String) -> Doc {
+        let beg = Pair {
+            pid: Pid(vec![Pos { ident: 0, site: 0 }]),
+            atom: '_',
+        };
+        let end = Pair {
+            pid: Pid(vec![Pos {
+                ident: LBASE,
+                site: 0,
+            }]),
+            atom: '_',
+        };
+
+        let mut d = Doc {
+            pairs: vec![beg, end],
+            site: 1,
+        };
+
+        for c in content.chars() {
+            d.insert_idx(d.len() - 2, c);
+        }
+        d
+    }
+    // fn index(&self, pid: &Pid) -> usize {
+    //     for (i, p) in self.pairs.iter().enumerate() {
+    //         if compare_pid(&p.pid, &pid) == 0 {
+    //             return i;
+    //         }
+    //     }
+    //     return 0;
+    // }
+    //
+    pub fn index(&self, pid: &Pid) -> (usize, bool) {
+        let mut search_scope: &[Pair] = &self.pairs;
+        let mut off = 0;
+
+        loop {
+            if search_scope.is_empty() {
+                return (off, false);
+            }
+
+            let split_point = search_scope.len() / 2;
+            let mid = &search_scope[split_point].pid;
+
+            match pid.cmp(mid) {
+                Ordering::Equal => return (off + split_point, true),
+                Ordering::Less => {
+                    search_scope = &search_scope[..split_point]; // left half
+                }
+                Ordering::Greater => {
+                    off += split_point + 1;
+                    search_scope = &search_scope[split_point + 1..];
+                }
+            }
+        }
+    }
+
+    fn insert(&mut self, pid: &Pid, c: char) {}
+
+    pub fn insert_idx(&mut self, idx: usize, c: char) {
+        let l = &self.pairs[idx].pid;
+        let r = &self.pairs[idx + 1].pid;
+        let p = generate_between_pids(l, r, 1);
+        let p = Pair { pid: p, atom: c };
+        self.pairs.insert(idx + 1, p)
+    }
+    pub fn to_string(&self) -> String {
+        let mut s = String::new();
+        for p in &self.pairs {
+            s.push(p.atom);
+        }
+        s
+    }
+    pub fn len(&self) -> usize {
+        return self.pairs.len();
+    }
+}
