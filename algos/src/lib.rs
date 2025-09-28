@@ -2,12 +2,21 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::BTreeMap};
 
+mod msg;
+pub use msg::PeerMessage;
+
 const LBASE: u32 = u32::MAX; // maximum identifier value
 /// A single position in a PID
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pos {
     ident: u32,
     site: u8,
+}
+
+impl Pos {
+    pub fn new(ident: u32, site: u8) -> Pos {
+        Pos { ident, site }
+    }
 }
 
 impl PartialEq for Pos {
@@ -35,6 +44,11 @@ impl Ord for Pos {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pid(Vec<Pos>);
 
+impl Pid {
+    pub fn new(ident: u32) -> Pid {
+        Pid(vec![Pos::new(ident, 1)])
+    }
+}
 impl PartialOrd for Pid {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -110,7 +124,7 @@ pub struct Pair {
     atom: char,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Doc {
     content: BTreeMap<Pid, char>,
     site: u8,
@@ -118,27 +132,58 @@ pub struct Doc {
 
 impl Doc {
     pub fn new(content: String) -> Doc {
-        let beg = (Pid(vec![Pos {
-                ident: 0,
-                site: 0,
-            }]), '_');
-        let end = (Pid(vec![Pos {
+        let beg = (Pid(vec![Pos { ident: 0, site: 0 }]), '_');
+        let end = (
+            Pid(vec![Pos {
                 ident: LBASE,
                 site: 0,
-            }]), '_');
+            }]),
+            '_',
+        );
 
         let mut d = Doc {
             content: BTreeMap::from([beg.clone(), end.clone()]),
             site: 1,
         };
-        let mut left = beg.0.clone();
-
-        for c in content.chars() {
-            let pid = generate_between_pids(&left, &end.0, 1);
-            d.content.insert(pid.clone(), c);
-            left = pid;
+        let step = (u32::MAX as usize) / content.len();
+        for (i, c) in content.chars().enumerate() {
+            d.content.insert(
+                Pid(vec![Pos {
+                    ident: (i * step) as u32,
+                    site: 1,
+                }]),
+                c,
+            );
         }
         d
+    }
+    pub fn right(&self, pid: &Pid) -> Pid {
+        self.content.range(pid..).skip(1).next().unwrap().0.clone()
+    }
+    pub fn left(&self, pid: &Pid) -> Pid {
+        self.content.range(..pid).next_back().unwrap().0.clone()
+    }
+
+    pub fn offset(&self, pid: &Pid, offset: isize) -> Option<Pid> {
+        if offset == 0 {
+            return Some(pid.clone());
+        }
+
+        if offset > 0 {
+            // move right
+            self.content
+                .range(pid..) // start at pid
+                .skip(1) // skip self
+                .nth((offset - 1) as usize)
+                .map(|(k, _)| k.clone())
+        } else {
+            // move left
+            self.content
+                .range(..pid) // all before pid
+                .rev() // backwards
+                .nth((-offset - 1) as usize)
+                .map(|(k, _)| k.clone())
+        }
     }
     // fn index(&self, pid: &Pid) -> usize {
     //     for (i, p) in self.pairs.iter().enumerate() {
@@ -175,8 +220,19 @@ impl Doc {
     //     }
     // }
 
-    fn insert(&mut self, pid: &Pid, c: char) {}
+    pub fn insert(&mut self, pid: Pid, c: char) {
+        self.content.insert(pid, c);
+    }
+    pub fn insert_left(&mut self, pid: Pid, c: char) -> Pid {
+        let right = self.right(&pid);
+        let new = generate_between_pids(&pid, &right, 1);
+        self.content.insert(new.clone(), c);
+        return new;
+    }
 
+    pub fn delete(&mut self, pid: &Pid) {
+        self.content.remove(pid);
+    }
     // pub fn insert_idx(&mut self, idx: usize, c: char) {
     //     let l = &self.content[idx].pid;
     //     let r = &self.content[idx + 1].pid;
