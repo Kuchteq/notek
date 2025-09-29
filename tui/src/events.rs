@@ -4,8 +4,8 @@ use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 use crate::remote::RemoteEvent;
 
-#[derive(PartialEq)]
 pub enum AppEvent {
+    NewSession(u8, Doc),
     CursorInsert(char),
     CursorDelete,
     CursorMove(isize),
@@ -51,29 +51,30 @@ pub fn interpret_key(key: KeyEvent) -> AppEvent {
 pub fn handle_event(ev : AppEvent, doc: &mut Doc, cursor: &mut Pid, rm_tx: &UnboundedSender<RemoteEvent>) -> bool {
     match ev {
         AppEvent::CursorInsert(c) => 
-        {
-            let old_curs = cursor.clone();
-            *cursor = doc.insert_left(old_curs.clone(), c);
-            rm_tx.send(RemoteEvent::InsertAt(old_curs, c));
-        }
-            ,
+            {
+                let old_curs = cursor.clone();
+                *cursor = doc.insert_left(old_curs.clone(), c);
+                rm_tx.send(RemoteEvent::InsertAt(old_curs, c));
+            }
+                ,
         AppEvent::CursorDelete => { 
-            let new_place = doc.left(&cursor);
-            doc.delete(&cursor);
-            rm_tx.send(RemoteEvent::DeleteAt(cursor.clone()));
-            *cursor = new_place;
+                let new_place = doc.left(&cursor);
+                doc.delete(&cursor);
+                rm_tx.send(RemoteEvent::DeleteAt(cursor.clone()));
+                *cursor = new_place;
 
-        },
+            },
         AppEvent::CursorMove(off) => { *cursor = doc.offset(cursor, off).unwrap() },
         AppEvent::InsertAt(pid, c) => {
-            doc.insert(pid, c);
-        },
+                doc.insert(pid, c);
+            },
         AppEvent::DeleteAt(pid) => {
-            doc.delete(&pid);
-        },
+                doc.delete(&pid);
+            },
         AppEvent::MoveTo(pid) => todo!(),
         AppEvent::Skip => (),
         AppEvent::Quit => return true,
+        AppEvent::NewSession(s, new_doc) => *doc = new_doc,
     };
     false
 }

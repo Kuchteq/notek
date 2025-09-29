@@ -1,10 +1,11 @@
 use algos::{Doc, PeerMessage, Pid};
 
 use futures::{Sink, Stream};
-use futures_util::SinkExt;
+use futures::SinkExt;
 use tokio_tungstenite::tungstenite::{self, protocol::Message};
 
 use crate::events::AppEvent;
+use futures::StreamExt;
 
 pub enum RemoteEvent {
     InsertAt(Pid, char),
@@ -16,11 +17,13 @@ pub async fn handle_incoming(bin: &[u8], ev_tx: &tokio::sync::mpsc::UnboundedSen
     let msg: PeerMessage = bincode::deserialize(bin).unwrap();
     match msg {
         PeerMessage::Insert(pid, c) => {
-            let _ = ev_tx.send(AppEvent::InsertAt(pid, c));
-        }
+                    let _ = ev_tx.send(AppEvent::InsertAt(pid, c));
+                }
         PeerMessage::Delete(pid) => {
-            let _ = ev_tx.send(AppEvent::DeleteAt(pid));
-        }
+                    let _ = ev_tx.send(AppEvent::DeleteAt(pid));
+                }
+        PeerMessage::Greet => {},
+        PeerMessage::NewSession(s, doc) => { ev_tx.send(AppEvent::NewSession(s, doc)); }
     }
 }
 
@@ -38,20 +41,11 @@ where
 }
 
 
-pub async fn greet<S, R>(ws_sink: &mut S, ws_stream: &mut R) -> Doc
+pub async fn greet<S, R>(ws_sink: &mut S, ws_stream: &mut R)
 where
     S: Sink<Message> + Unpin,
     R: Stream<Item = Result<Message, tungstenite::Error>> + Unpin,
 {
-    // Send a message
-    // let bytes = bincode::serialize(&PeerMessage::Greet(1)).unwrap();
-    // ws_sink.send(Message::from(bytes)).await.unwrap();
-    //
-    // // Receive a message
-    // let d: Doc = match ws_stream.next().await {
-    //     Some(Ok(Message::Binary(bin))) => bincode::deserialize(&bin).unwrap(),
-    //     _ => Doc::new(String::new()),
-    // };
-    //
-    d
+    let bytes = bincode::serialize(&PeerMessage::Greet).unwrap();
+    ws_sink.send(Message::from(bytes)).await;
 }

@@ -13,8 +13,8 @@ use tokio_tungstenite::{connect_async, tungstenite};
 use tungstenite::protocol::Message;
 
 use crate::{
-    events::{AppEvent, handle_event, interpret_key},
-    remote::{RemoteEvent, handle_incoming, handle_outgoing},
+    events::{handle_event, interpret_key, AppEvent},
+    remote::{greet, handle_incoming, handle_outgoing, RemoteEvent},
 };
 mod events;
 mod remote;
@@ -36,6 +36,8 @@ async fn main() -> anyhow::Result<()> {
     // } else {
     //     Doc::new(String::new())
     // };
+    greet(&mut ws_sink, &mut ws_stream).await;
+    let mut d = Doc::new("hi".to_string());
 
     // Main app event channel
     let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<AppEvent>();
@@ -49,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Ok(event) = tokio::task::spawn_blocking(|| crossterm::event::read()).await {
                     if let Ok(crossterm::event::Event::Key(key)) = event {
                         let ev = interpret_key(key);
-                        let should_stop = ev == AppEvent::Quit;
+                        let should_stop = matches!(ev, AppEvent::Quit);
                         ev_tx.send(ev);
                         if should_stop {
                             break;
