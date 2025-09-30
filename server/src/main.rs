@@ -73,38 +73,38 @@ async fn handle_connection(
 
     println!("New WebSocket connection");
 
-    tokio::spawn({async move {
-        while let Ok(update) = bcast_rx.recv().await {
-            let bytes = bincode::serialize(&update).unwrap();
-            if ws_sink.send(Message::from(bytes)).await.is_err() {
-                break;
-            }
-        }
-    }});
-    while let Some(msg) = ws_stream.next().await {
-        let msg = msg?;
-        if let Message::Binary(bin) = msg {
-            let msg: PeerMessage = bincode::deserialize(&bin).unwrap();
-            match msg {
-                PeerMessage::Insert(pid, c) => {
-                    dcmd_tx.send(DocCommand::Insert(pid, c));
-                }
-                PeerMessage::Delete(pid) => {
-                    dcmd_tx.send(DocCommand::Delete(pid));
-                }
-                PeerMessage::Greet => {
-                    let (resp_tx, resp_rx) = oneshot::channel();
-                    dcmd_tx.send(DocCommand::GetSnapshot(resp_tx)).unwrap();
-                    let snapshot = resp_rx.await.unwrap();
-                    let response = PeerMessage::NewSession(connection_site_id, (*snapshot).clone());
-                    let bytes = bincode::serialize(&response).unwrap();
-                    let msg = Message::from(bytes);
+    tokio::select! {
+        Some(msg) = ws_stream.next() => {
+                let msg = msg?;
+                if let Message::Binary(bin) = msg {
+                    let msg: PeerMessage = bincode::deserialize(&bin).unwrap();
+                    match msg {
+                        PeerMessage::Insert(pid, c) => {
+                            dcmd_tx.send(DocCommand::Insert(pid, c));
+                        }
+                        PeerMessage::Delete(pid) => {
+                            dcmd_tx.send(DocCommand::Delete(pid));
+                        }
+                        PeerMessage::Greet => {
+                            let (resp_tx, resp_rx) = oneshot::channel();
+                            dcmd_tx.send(DocCommand::GetSnapshot(resp_tx)).unwrap();
+                            let snapshot = resp_rx.await.unwrap();
+                            let response = PeerMessage::NewSession(connection_site_id, (*snapshot).clone());
+                            let bytes = bincode::serialize(&response).unwrap();
+                            let msg = Message::from(bytes);
 
-                    ws_sink.send(msg).await?;
+                            ws_sink.send(msg).await?;
+                        }
+                        PeerMessage::NewSession(_, _) => {}
+                    }
                 }
-                PeerMessage::NewSession(_, _) => {}
-            }
         }
+        Ok(update) = bcast_rx.recv() => {
+                let bytes = bincode::serialize(&update).unwrap();
+                if ws_sink.send(Message::from(bytes)).await.is_err() {
+                }
+            }
+
     }
 
     Ok(())
