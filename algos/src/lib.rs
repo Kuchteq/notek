@@ -127,7 +127,7 @@ pub struct Pair {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Doc {
     content: BTreeMap<Pid, char>,
-    site: u8,
+    pub site: u8,
 }
 
 impl Doc {

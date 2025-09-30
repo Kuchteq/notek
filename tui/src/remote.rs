@@ -8,18 +8,18 @@ use crate::events::AppEvent;
 use futures::StreamExt;
 
 pub enum RemoteEvent {
-    InsertAt(Pid, char),
-    DeleteAt(Pid),
+    InsertAt(u8, Pid, char),
+    DeleteAt(u8, Pid),
 }
 
 // Handle an incoming WebSocket message and send an internal event
 pub async fn handle_incoming(bin: &[u8], ev_tx: &tokio::sync::mpsc::UnboundedSender<AppEvent>) {
     let msg: PeerMessage = bincode::deserialize(bin).unwrap();
     match msg {
-        PeerMessage::Insert(pid, c) => {
+        PeerMessage::Insert(site, pid, c) => {
                     let _ = ev_tx.send(AppEvent::InsertAt(pid, c));
                 }
-        PeerMessage::Delete(pid) => {
+        PeerMessage::Delete(site, pid) => {
                     let _ = ev_tx.send(AppEvent::DeleteAt(pid));
                 }
         PeerMessage::Greet => {},
@@ -33,8 +33,8 @@ where
     S: Sink<Message> + Unpin,
 {
     let msg = match ev {
-        RemoteEvent::InsertAt(pid, c) => PeerMessage::Insert(pid, c),
-        RemoteEvent::DeleteAt(pid) => PeerMessage::Delete(pid),
+        RemoteEvent::InsertAt(site, pid, c) => PeerMessage::Insert(site, pid, c),
+        RemoteEvent::DeleteAt(site, pid) => PeerMessage::Delete(site, pid),
     };
     let bytes = bincode::serialize(&msg).unwrap();
     ws_sink.send(Message::from(bytes)).await

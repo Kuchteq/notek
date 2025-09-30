@@ -14,6 +14,7 @@ pub enum AppEvent {
     DeleteAt(Pid),
     MoveTo(Pid),
     Skip,
+    Test,
     Quit,
 }
 
@@ -41,7 +42,8 @@ pub fn interpret_key(key: KeyEvent) -> AppEvent {
             // cursorng.0 = d.left(&cursorng.0);
         }
         KeyCode::Right => {
-            AppEvent::CursorMove(-1)
+            AppEvent::Test
+            // AppEvent::CursorMove(-1)
             // cursorng.0 = d.right(&cursorng.0);
         }
         _ => AppEvent::Skip
@@ -51,30 +53,30 @@ pub fn interpret_key(key: KeyEvent) -> AppEvent {
 pub fn handle_event(ev : AppEvent, doc: &mut Doc, cursor: &mut Pid, rm_tx: &UnboundedSender<RemoteEvent>) -> bool {
     match ev {
         AppEvent::CursorInsert(c) => 
-            {
-                let old_curs = cursor.clone();
-                *cursor = doc.insert_left(old_curs.clone(), c);
-                rm_tx.send(RemoteEvent::InsertAt(old_curs, c));
-            }
-                ,
+                {
+                    *cursor = doc.insert_left(cursor.clone(), c);
+                    rm_tx.send(RemoteEvent::InsertAt(doc.site, cursor.clone(), c));
+                }
+                    ,
         AppEvent::CursorDelete => { 
-                let new_place = doc.left(&cursor);
-                doc.delete(&cursor);
-                rm_tx.send(RemoteEvent::DeleteAt(cursor.clone()));
-                *cursor = new_place;
+                    let new_place = doc.left(&cursor);
+                    doc.delete(&cursor);
+                    rm_tx.send(RemoteEvent::DeleteAt(doc.site, cursor.clone()));
+                    *cursor = new_place;
 
-            },
+                },
         AppEvent::CursorMove(off) => { *cursor = doc.offset(cursor, off).unwrap() },
         AppEvent::InsertAt(pid, c) => {
-                doc.insert(pid, c);
-            },
+                    doc.insert(pid, c);
+                },
         AppEvent::DeleteAt(pid) => {
-                doc.delete(&pid);
-            },
+                    doc.delete(&pid);
+                },
         AppEvent::MoveTo(pid) => todo!(),
         AppEvent::Skip => (),
         AppEvent::Quit => return true,
-        AppEvent::NewSession(s, new_doc) => *doc = new_doc,
+        AppEvent::NewSession(s, new_doc) => {*doc = new_doc; doc.site = s},
+        AppEvent::Test => doc.site = 69,
     };
     false
 }
