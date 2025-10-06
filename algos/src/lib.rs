@@ -73,6 +73,7 @@ pub fn generate_between_pids(lp: &Pid, rp: &Pid, site_id: u8) -> Pid {
     let mut p = Vec::new();
 
     let max_depth = lp.0.len().max(rp.0.len());
+    let mut rng = rand::rng();
 
     for i in 0..max_depth {
         let l = lp.0.get(i).cloned().unwrap_or(Pos { ident: 0, site: 0 });
@@ -97,7 +98,6 @@ pub fn generate_between_pids(lp: &Pid, rp: &Pid, site_id: u8) -> Pid {
 
         let d = r.ident.saturating_sub(l.ident);
         if d > 1 {
-            let mut rng = rand::rng();
             let new_ident = rng.random_range(l.ident + 1..r.ident);
             p.push(Pos {
                 ident: new_ident,
@@ -111,17 +111,11 @@ pub fn generate_between_pids(lp: &Pid, rp: &Pid, site_id: u8) -> Pid {
 
     // If no gap found, extend depth
     p.push(Pos {
-        ident: LBASE / 2,
+        ident: rng.random_range(0..LBASE),
         site: site_id,
     });
 
     Pid(p)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Pair {
-    pid: Pid,
-    atom: char,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

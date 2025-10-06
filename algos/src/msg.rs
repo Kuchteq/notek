@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Doc, Pid};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", content = "data")]
 pub enum PeerMessage {
     Greet,
     Insert(u8, Pid, char),
