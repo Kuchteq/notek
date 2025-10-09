@@ -1,6 +1,6 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{char, cmp::Ordering, collections::BTreeMap};
 
 mod msg;
 pub use msg::PeerMessage;
@@ -178,6 +178,12 @@ impl Doc {
                 .nth((-offset - 1) as usize)
                 .map(|(k, _)| k.clone())
         }
+    }
+    pub fn keys(&self) -> Vec<Pid> {
+        self.content.keys().cloned().collect()
+    }
+    pub fn values(&self) -> Vec<char> {
+        self.content.values().cloned().collect()
     }
     // fn index(&self, pid: &Pid) -> usize {
     //     for (i, p) in self.pairs.iter().enumerate() {

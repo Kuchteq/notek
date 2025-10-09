@@ -79,6 +79,7 @@ async fn handle_connection(
         "New WebSocket connection, assigned id: {}",
         connection_site_id
     );
+
     loop {
         tokio::select! {
             Some(msg) = ws_stream.next() => {
@@ -97,11 +98,13 @@ async fn handle_connection(
                                 let (resp_tx, resp_rx) = oneshot::channel();
                                 dcmd_tx.send(DocCommand::GetSnapshot(resp_tx)).unwrap();
                                 let snapshot = resp_rx.await.unwrap();
-                                let response = PeerMessage::NewSession(connection_site_id, (*snapshot).clone());
+                                // let response = PeerMessage::NewSession(connection_site_id, (*snapshot).clone());
+                                let response = PeerMessage::NewSessionRaw(connection_site_id, (*snapshot).keys(), (*snapshot).values());
                                 let msg = serializer.serialize(&response);
                                 ws_sink.send(msg).await?;
                             }
                             PeerMessage::NewSession(_, _) => {}
+                            PeerMessage::NewSessionRaw(_, _, _) => {}
                         }
                     }
             }

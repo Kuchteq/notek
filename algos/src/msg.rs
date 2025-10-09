@@ -13,4 +13,5 @@ pub enum PeerMessage {
 
     // client only
     NewSession(u8, Doc),
+    NewSessionRaw { site: u8, keys: Vec<Pid>, values: Vec<char> },
 }
