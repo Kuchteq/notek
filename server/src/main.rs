@@ -39,11 +39,11 @@ async fn main() -> anyhow::Result<()> {
                     DocCommand::Insert(site, pid, c) => {
                         // doc.insert(pid, c);
                         Arc::make_mut(&mut doc).insert(pid.clone(), c); // clone-on-write
-                        let _ = bcast_tx.send(PeerMessage::Insert(site, pid, c));
+                        let _ = bcast_tx.send(PeerMessage::Insert{ site, pid, c });
                     }
                     DocCommand::Delete(site, pid) => {
                         Arc::make_mut(&mut doc).delete(&pid);
-                        let _ = bcast_tx.send(PeerMessage::Delete(site, pid));
+                        let _ = bcast_tx.send(PeerMessage::Delete{ site, pid });
                     }
                     DocCommand::GetSnapshot(resp) => {
                         let _ = resp.send(doc.clone());
@@ -88,31 +88,30 @@ async fn handle_connection(
 
                         let msg: PeerMessage = serializer.deserialize(&bin);
                         match msg {
-                            PeerMessage::Insert(site, pid, c) => {
+                            PeerMessage::Insert{ site, pid, c } => {
                                 dcmd_tx.send(DocCommand::Insert(site, pid, c));
                             }
-                            PeerMessage::Delete(site, pid) => {
+                            PeerMessage::Delete{ site, pid } => {
                                 dcmd_tx.send(DocCommand::Delete(site, pid));
                             }
-                            PeerMessage::Greet => {
+                            PeerMessage::Greet{} => {
                                 let (resp_tx, resp_rx) = oneshot::channel();
                                 dcmd_tx.send(DocCommand::GetSnapshot(resp_tx)).unwrap();
                                 let snapshot = resp_rx.await.unwrap();
                                 // let response = PeerMessage::NewSession(connection_site_id, (*snapshot).clone());
-                                let response = PeerMessage::NewSessionRaw(connection_site_id, (*snapshot).keys(), (*snapshot).values());
+                                let response = PeerMessage::NewSessionRaw { site: connection_site_id, keys: (*snapshot).keys(), values: (*snapshot).values()} ;
                                 let msg = serializer.serialize(&response);
                                 ws_sink.send(msg).await?;
                             }
-                            PeerMessage::NewSession(_, _) => {}
-                            PeerMessage::NewSessionRaw(_, _, _) => {}
+                            _ => {}
                         }
                     }
             }
         Ok(update) = bcast_rx.recv() => {
                 let should_receive = match &update {
-                    PeerMessage::Insert(site, _, _) => { println!("{}", site);
+                    PeerMessage::Insert{site, ..} => { println!("{}", site);
                         *site != connection_site_id},
-                    PeerMessage::Delete(site, _) => *site != connection_site_id,
+                    PeerMessage::Delete{site, ..} => *site != connection_site_id,
                     _ => false
                 };
                 if !should_receive {
