@@ -1,6 +1,12 @@
+use byteorder::{LittleEndian, ReadBytesExt};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::{char, cmp::Ordering, collections::BTreeMap};
+use std::{
+    char,
+    cmp::Ordering,
+    collections::BTreeMap,
+    io::{Cursor, Read},
+};
 
 mod msg;
 pub use msg::PeerMessage;
@@ -16,6 +22,10 @@ pub struct Pos {
 impl Pos {
     pub fn new(ident: u32, site: u8) -> Pos {
         Pos { ident, site }
+    }
+    pub fn write_bytes(&self, buf: &mut Vec<u8>) {
+        buf.extend(&self.ident.to_le_bytes());
+        buf.push(self.site);
     }
 }
 
@@ -47,6 +57,53 @@ pub struct Pid(Vec<Pos>);
 impl Pid {
     pub fn new(ident: u32) -> Pid {
         Pid(vec![Pos::new(ident, 1)])
+    }
+    pub fn write_bytes(&self, buf: &mut Vec<u8>) {
+        for pos in &self.0 {
+            pos.write_bytes(buf);
+        }
+    }
+    pub fn depth(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn from_reader<R: Read>(reader: &mut R, depth: usize) -> Self {
+        let mut positions = Vec::with_capacity(depth);
+
+        for _ in 0..depth {
+            let mut ident_bytes = [0u8; 4];
+            reader.read_exact(&mut ident_bytes).unwrap();
+            let ident = u32::from_le_bytes(ident_bytes);
+
+            let mut site = [0u8; 1];
+            reader.read_exact(&mut site).unwrap();
+
+            positions.push(Pos {
+                ident,
+                site: site[0],
+            });
+        }
+        Pid(positions)
+    }
+
+    pub fn from_bytes(buf: &Vec<u8>, depth: u8) -> Pid {
+        let mut cur = Cursor::new(buf);
+        let mut positions = Vec::with_capacity(depth.into());
+
+        for _ in 0..depth {
+            let mut ident_bytes = [0u8; 4];
+            cur.read_exact(&mut ident_bytes).unwrap();
+            let ident = u32::from_le_bytes(ident_bytes);
+
+            let mut site = [0u8; 1];
+            cur.read_exact(&mut site).unwrap();
+
+            positions.push(Pos {
+                ident,
+                site: site[0],
+            });
+        }
+        Pid(positions)
     }
 }
 impl PartialOrd for Pid {
@@ -185,6 +242,61 @@ impl Doc {
     pub fn values(&self) -> Vec<char> {
         self.content.values().cloned().collect()
     }
+    pub fn write_bytes(&self, buf: &mut Vec<u8>) {
+        for (pid, ch) in &self.content {
+            // encode char (UTF-8, variable length)
+            let mut cbuf = [0u8; 4];
+            let encoded = ch.encode_utf8(&mut cbuf);
+            // put atom's data length
+            buf.push(encoded.len() as u8);
+            // put atom's data
+            buf.extend(encoded.as_bytes());
+            // put pid's depth
+            buf.push(pid.depth() as u8);
+            // put pid vector
+            pid.write_bytes(buf);
+        }
+    }
+
+    pub fn from_reader<R: Read>(reader: &mut R, n: usize) -> Self {
+        let mut content = BTreeMap::new();
+
+        for _ in 0..n {
+            let data_len = reader.read_u8().unwrap() as usize;
+            let mut bytes = [0u8; 4];
+            reader.read_exact(&mut bytes[..data_len]).unwrap();
+            let data = std::str::from_utf8(&bytes[..data_len])
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            let pid_depth = reader.read_u8().unwrap();
+            let pid = Pid::from_reader(reader, pid_depth.into());
+            content.insert(pid, data);
+        }
+
+        Doc { content, site: 1 }
+    }
+    pub fn from_bytes(buf: &[u8], n: u64) -> Doc {
+        let mut content = BTreeMap::new();
+
+        let mut cur = Cursor::new(buf);
+        for _ in 0..n {
+            let data_len = cur.read_u8().unwrap() as usize;
+            let mut bytes = [0u8; 4];
+            cur.read_exact(&mut bytes[..data_len]).unwrap();
+            let data = std::str::from_utf8(&bytes[..data_len])
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            let pid_depth = cur.read_u8().unwrap();
+            let pid = Pid::from_reader(&mut cur, pid_depth.into());
+            content.insert(pid, data);
+        }
+
+        Doc { content, site: 1 }
+    }
     // fn index(&self, pid: &Pid) -> usize {
     //     for (i, p) in self.pairs.iter().enumerate() {
     //         if compare_pid(&p.pid, &pid) == 0 {
@@ -219,7 +331,6 @@ impl Doc {
     //         }
     //     }
     // }
-
     pub fn insert(&mut self, pid: Pid, c: char) {
         self.content.insert(pid, c);
     }

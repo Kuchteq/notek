@@ -14,16 +14,16 @@ pub enum RemoteEvent {
 
 // Handle an incoming WebSocket message and send an internal event
 pub async fn handle_incoming(bin: &[u8], ev_tx: &tokio::sync::mpsc::UnboundedSender<AppEvent>) {
-    let msg: PeerMessage = bincode::deserialize(bin).unwrap();
+    let msg: PeerMessage = PeerMessage::deserialize(bin);
     match msg {
-        PeerMessage::Insert(site, pid, c) => {
+        PeerMessage::Insert{site, pid, c} => {
                     let _ = ev_tx.send(AppEvent::InsertAt(pid, c));
                 }
-        PeerMessage::Delete(site, pid) => {
+        PeerMessage::Delete{site, pid} => {
                     let _ = ev_tx.send(AppEvent::DeleteAt(pid));
                 }
         PeerMessage::Greet => {},
-        PeerMessage::NewSession(s, doc) => { ev_tx.send(AppEvent::NewSession(s, doc)); }
+        PeerMessage::NewSession{site, doc} => { ev_tx.send(AppEvent::NewSession(site, doc)); }
     }
 }
 
@@ -33,10 +33,10 @@ where
     S: Sink<Message> + Unpin,
 {
     let msg = match ev {
-        RemoteEvent::InsertAt(site, pid, c) => PeerMessage::Insert(site, pid, c),
-        RemoteEvent::DeleteAt(site, pid) => PeerMessage::Delete(site, pid),
+        RemoteEvent::InsertAt(site, pid, c) => PeerMessage::Insert{site, pid, c},
+        RemoteEvent::DeleteAt(site, pid) => PeerMessage::Delete{site, pid},
     };
-    let bytes = bincode::serialize(&msg).unwrap();
+    let bytes = msg.serialize();
     ws_sink.send(Message::from(bytes)).await
 }
 
@@ -46,6 +46,7 @@ where
     S: Sink<Message> + Unpin,
     R: Stream<Item = Result<Message, tungstenite::Error>> + Unpin,
 {
-    let bytes = bincode::serialize(&PeerMessage::Greet).unwrap();
+    
+    let bytes = PeerMessage::Greet.serialize();
     ws_sink.send(Message::from(bytes)).await;
 }

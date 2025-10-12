@@ -73,7 +73,7 @@ async fn handle_connection(
     let ws = accept_async(stream).await?;
     let connection_site_id = rand::rng().random_range(0..255);
     let (mut ws_sink, mut ws_stream) = ws.split();
-    let serializer = Serializer::new(serializer::SerializeFormat::MsgPack);
+    let serializer = Serializer::new(serializer::SerializeFormat::Mine);
 
     println!(
         "New WebSocket connection, assigned id: {}",
@@ -98,8 +98,7 @@ async fn handle_connection(
                                 let (resp_tx, resp_rx) = oneshot::channel();
                                 dcmd_tx.send(DocCommand::GetSnapshot(resp_tx)).unwrap();
                                 let snapshot = resp_rx.await.unwrap();
-                                // let response = PeerMessage::NewSession(connection_site_id, (*snapshot).clone());
-                                let response = PeerMessage::NewSessionRaw { site: connection_site_id, keys: (*snapshot).keys(), values: (*snapshot).values()} ;
+                                let response = PeerMessage::NewSession{ site: connection_site_id, doc: (*snapshot).clone() };
                                 let msg = serializer.serialize(&response);
                                 ws_sink.send(msg).await?;
                             }

@@ -27,7 +27,7 @@ impl Serializer {
                 Message::from(bytes)
             }
             SerializeFormat::Mine => {
-                let bytes = rmp_serde::to_vec(&msg).unwrap();
+                let bytes = msg.serialize();
                 Message::from(bytes)
             }
         }
@@ -42,7 +42,9 @@ impl Serializer {
                         let bytes = rmp_serde::from_slice(msg).unwrap();
                         PeerMessage::from(bytes)
                     }
-            SerializeFormat::Mine => todo!(),
+            SerializeFormat::Mine => {
+                PeerMessage::deserialize(msg)
+            }
         }
     }
 }
