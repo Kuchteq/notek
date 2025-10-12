@@ -1,28 +1,84 @@
+import java.io.DataInputStream
 import java.util.TreeMap
 import kotlin.math.max
+import kotlin.times
+import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 
+data class Doc(
+    val content: TreeMap<Pid, Char>,
+    val site: UByte
+) {
+    companion object {
+        fun fromReader(reader: DataInputStream, n: Int): Doc {
+            val content = TreeMap<Pid, Char>() // same semantics as BTreeMap
 
-public class Doc {
-    val content: TreeMap<Pid, Char>
-    var site: UShort
+            repeat(n) {
+                // Read the character length (1–4 bytes for UTF-8)
+                val dataLen = reader.readUnsignedByte()
 
-    // Primary constructor
-    constructor(content: String, site: UShort) {
-        val step = UInt.MAX_VALUE / content.length.toUInt();
-        this.content = TreeMap();
-        val beg = Pid.new(0u)
-        val end = Pid.new(UInt.MAX_VALUE)
+                // Read up to 4 bytes of UTF-8 data
+                val bytes = ByteArray(4)
+                reader.readFully(bytes, 0, dataLen)
 
-        this.content[beg] = '_'
-        this.content[end] = '_'
-        for ((i, c) in content.withIndex()) {
-            val v = Pid.new(i.toUInt()*step)
-            this.content[v] = c
+                // Decode only the first character
+                val data = bytes.decodeToString(0, dataLen).first()
+
+                // Read the pid depth and the pid itself
+                val pidDepth = reader.readUnsignedByte()
+                val pid = Pid.fromReader(reader, pidDepth)
+
+                // Insert into the map
+                content[pid] = data
+            }
+
+            // Return a new Doc (site hard-coded as 1)
+            return Doc(content, 1u)
         }
-        this.site = site
+        fun fromString(content: String, site: UByte) : Doc {
+            val step = UInt.MAX_VALUE / content.length.toUInt();
+            var map = TreeMap<Pid, Char>();
+            val beg = Pid.new(0u)
+            val end = Pid.new(UInt.MAX_VALUE)
+
+            map[beg] = '_'
+            map[end] = '_'
+            for ((i, c) in content.withIndex()) {
+                val v = Pid.new(i.toUInt()*step)
+                map[v] = c
+            }
+            return Doc(map, site)
+        }
+    }
+    fun writeBytes(buf: ByteArrayOutputStream) {
+        for ((pid, ch) in content) {
+            // 1️⃣ Encode the character into UTF-8 bytes (1–4 bytes)
+            val encoded = ch.toString().toByteArray(StandardCharsets.UTF_8)
+
+            // 2️⃣ Write the encoded character length (u8)
+            buf.write(encoded.size)
+
+            // 3️⃣ Write the actual UTF-8 bytes
+            buf.write(encoded)
+
+            // 4️⃣ Write pid depth (u8)
+            buf.write(pid.depth().toInt())
+
+            // 5️⃣ Write the pid vector itself
+            pid.writeBytes(buf)
+        }
+    }
+    fun display() : String {
+        return this.content.values.joinToString(separator = "")
     }
 
-    public fun insert_left(pid: Pid, c: Char, siteId: UShort) {
+    public fun delete(pid: Pid) {
+        this.content.remove(pid)
+    }
+    public fun insert(pid: Pid, c: Char) {
+        this.content[pid] = c
+    }
+    public fun insert_left(pid: Pid, c: Char, siteId: UByte) {
         val new = generate_between_pids(pid, right(pid), siteId)
         this.content[new] = c;
     }
@@ -35,9 +91,13 @@ public class Doc {
        return this.content.lowerKey(pid)
     }
 
+    public fun len() : Int {
+        return this.content.size
+    }
+
 }
 
-public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UShort) : Pid {
+public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UByte) : Pid {
     var p = Pid.empty()
 
     val max_depth = max(lp.positions.size, rp.positions.size)

@@ -18,13 +18,16 @@ repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
 }
-
+tasks.jar {
+    manifest {
+        attributes["Main-Class"] = "org.example.AppKt"
+    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
 dependencies {
     // This dependency is used by the application.
     implementation(libs.guava)
-    implementation("org.msgpack:jackson-dataformat-msgpack:0.9.8")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
-    implementation("com.fasterxml.jackson.core:jackson-annotations:2.17.0")
     implementation("io.ktor:ktor-client-core:2.3.4")
     implementation("io.ktor:ktor-client-cio:2.3.4")
     implementation("io.ktor:ktor-client-websockets:2.3.4")
