@@ -3,7 +3,8 @@ use std::io::{Cursor, Read};
 use byteorder::{LittleEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 
-use crate::{Doc, Pid};
+use crate::{doc::Doc, pid::Pid};
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum PeerMessage {
@@ -29,6 +30,7 @@ impl PeerMessage {
             }
             PeerMessage::Insert { site, pid, c } => {
                 let mut buf = vec![2u8];
+                buf.push(*site);
                 let mut cbuf = [0u8; 4];
                 let encoded = c.encode_utf8(&mut cbuf);
                 // put atom's data length
@@ -40,6 +42,7 @@ impl PeerMessage {
             }
             PeerMessage::Delete { site, pid } => {
                 let mut buf = vec![3u8];
+                buf.push(*site);
                 buf.push(pid.depth() as u8);
                 pid.write_bytes(&mut buf);
                 buf
@@ -59,6 +62,7 @@ impl PeerMessage {
                 }
             }
             2u8 => {
+                let site = cur.read_u8().unwrap();
                 let data_len = cur.read_u8().unwrap() as usize;
                 let mut bytes = [0u8; 4];
                 cur.read_exact(&mut bytes[..data_len]).unwrap();
@@ -69,12 +73,13 @@ impl PeerMessage {
                     .unwrap();
                 let pid_depth = cur.read_u8().unwrap();
                 let pid = Pid::from_reader(&mut cur, pid_depth as usize);
-                PeerMessage::Insert { site: 1, pid: pid, c: data }
+                PeerMessage::Insert { site: site, pid: pid, c: data }
             }
             3u8 => {
+                let site = cur.read_u8().unwrap();
                 let pid_depth = cur.read_u8().unwrap();
                 let pid = Pid::from_reader(&mut cur, pid_depth as usize);
-                PeerMessage::Delete { site: 1, pid: pid }
+                PeerMessage::Delete { site: site, pid: pid }
             }
             _ => panic!(),
         }

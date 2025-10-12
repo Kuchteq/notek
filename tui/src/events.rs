@@ -1,4 +1,4 @@
-use algos::{Doc, Pid};
+use algos::{doc::Doc, pid::Pid};
 use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 
@@ -14,7 +14,6 @@ pub enum AppEvent {
     DeleteAt(Pid),
     MoveTo(Pid),
     Skip,
-    Test,
     Quit,
 }
 
@@ -41,27 +40,22 @@ pub fn interpret_key(key: KeyEvent) -> AppEvent {
             AppEvent::CursorMove(1)
             // cursorng.0 = d.left(&cursorng.0);
         }
-        KeyCode::Right => {
-            AppEvent::Test
-            // AppEvent::CursorMove(-1)
-            // cursorng.0 = d.right(&cursorng.0);
-        }
         _ => AppEvent::Skip
     }
 }
 
-pub fn handle_event(ev : AppEvent, doc: &mut Doc, cursor: &mut Pid, rm_tx: &UnboundedSender<RemoteEvent>) -> bool {
+pub fn handle_event(ev : AppEvent, doc: &mut Doc, cursor: &mut Pid, rm_tx: &UnboundedSender<RemoteEvent>, site: &mut u8) -> bool {
     match ev {
         AppEvent::CursorInsert(c) => 
                 {
                     *cursor = doc.insert_left(cursor.clone(), c);
-                    rm_tx.send(RemoteEvent::InsertAt(doc.site, cursor.clone(), c));
+                    rm_tx.send(RemoteEvent::InsertAt(*site, cursor.clone(), c));
                 }
                     ,
         AppEvent::CursorDelete => { 
                     let new_place = doc.left(&cursor);
                     doc.delete(&cursor);
-                    rm_tx.send(RemoteEvent::DeleteAt(doc.site, cursor.clone()));
+                    rm_tx.send(RemoteEvent::DeleteAt(*site, cursor.clone()));
                     *cursor = new_place;
 
                 },
@@ -75,8 +69,7 @@ pub fn handle_event(ev : AppEvent, doc: &mut Doc, cursor: &mut Pid, rm_tx: &Unbo
         AppEvent::MoveTo(pid) => todo!(),
         AppEvent::Skip => (),
         AppEvent::Quit => return true,
-        AppEvent::NewSession(s, new_doc) => {*doc = new_doc; doc.site = s},
-        AppEvent::Test => doc.site = 69,
+        AppEvent::NewSession(s, new_doc) => {*doc = new_doc; *site = s },
     };
     false
 }

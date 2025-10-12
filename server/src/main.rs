@@ -1,13 +1,10 @@
-use algos::{Doc, PeerMessage, Pid};
+use algos::doc::Doc;
+use algos::msg::PeerMessage;
+use algos::pid::Pid;
 use rand::Rng;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
 
-// fn main() {
-//     let content = fs::read_to_string("foo.txt").unwrap();
-//     let doc = Doc::new(content.to_string());
-//     println!("{:#?}", doc.len());
-// }
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, oneshot};

@@ -1,5 +1,6 @@
-use algos::{Doc, PeerMessage, Pid};
 
+use algos::msg::PeerMessage;
+use algos::pid::Pid;
 use futures::{Sink, Stream};
 use futures::SinkExt;
 use tokio_tungstenite::tungstenite::{self, protocol::Message};

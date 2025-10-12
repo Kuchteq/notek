@@ -1,5 +1,5 @@
 
-use algos::PeerMessage;
+use algos::msg::PeerMessage;
 use tokio_tungstenite::tungstenite::Message;
 
 pub enum SerializeFormat {

@@ -1,5 +1,4 @@
-use algos::{Doc, PeerMessage, Pid, Pos};
-use crossterm::event::{self, Event, KeyCode, read};
+use algos::{doc::Doc, pid::Pid};
 use futures::{SinkExt, StreamExt};
 use ratatui::{
     Terminal,
@@ -84,7 +83,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut terminal = ratatui::init();
 
-    let mut cursorng = Pid::new(0); // (row, column)
+    let mut cursorng = Pid::new(0);
+    let mut site = 0;
     // Editor state
     loop {
         // Draw UI
@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
 
         select! {
             Some(ev) = ev_rx.recv() => {
-                let finished = handle_event(ev, &mut d, &mut cursorng, &rm_tx);
+                let finished = handle_event(ev, &mut d, &mut cursorng, &rm_tx, &mut site);
                 if finished {
                     break
                 }
