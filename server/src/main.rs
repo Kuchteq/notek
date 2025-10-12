@@ -21,7 +21,7 @@ enum DocCommand {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:9001").await?;
+    let listener = TcpListener::bind("0.0.0.0:9001").await?;
     println!("Listening on 127.0.0.1:9001");
 
     let (dcmd_tx, mut dcmd_rx) = mpsc::unbounded_channel::<DocCommand>();
