@@ -2,6 +2,9 @@ package dev.kuchta.notek
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.insert
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -23,9 +26,11 @@ fun WebSocketDocComponent(
     var doc by remember { mutableStateOf(Doc.fromString("local", 0u)) }
     val trigger = remember { mutableStateOf(0) }
 
+    val tfs = rememberTextFieldState(initialText = "")
+
     // Launch WebSocket client in Compose lifecycle
     LaunchedEffect(Unit) {
-        client.ws(method = HttpMethod.Get, host = "192.168.191.179", port = 9001, path = "/") {
+        client.ws(method = HttpMethod.Get, host = "192.168.1.222", port = 9001, path = "/") {
             // Send initial greet
             send(PeerMessage.Greet.serialize())
 
@@ -37,13 +42,16 @@ fun WebSocketDocComponent(
                     when (message) {
                         is PeerMessage.NewSession -> {
                             doc = message.doc
+                            tfs.edit { replace(0, length, doc.display()) }
                         }
                         is PeerMessage.Delete -> {
                             doc.delete(message.pid)
+                            tfs.edit { replace(0, length, doc.display())}
                         }
                         PeerMessage.Greet -> { /* no-op */ }
                         is PeerMessage.Insert -> {
                             doc.insert(message.pid, message.c)
+                            tfs.edit { replace(0, length, doc.display())}
                         }
                     }
                 }
@@ -53,10 +61,11 @@ fun WebSocketDocComponent(
 
     Column(modifier = modifier) {
         Text(text = "Live Doc Preview:")
-        TextField(
-            value = doc.display(), // show the document content
-            onValueChange = {},    // read-only for now
-            modifier = Modifier.fillMaxWidth()
+            TextField(
+                state = tfs,
+                outputTransformation = OutputTransformation {
+                    println(selection)
+                }
         )
     }
 }
