@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::Ordering,
+    cmp::Ordering, io::Write,
 };
+use anyhow::{anyhow, Context, Result};
 
 /// A single position in a PID
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,9 +14,14 @@ impl Pos {
     pub fn new(ident: u32, site: u8) -> Pos {
         Pos { ident, site }
     }
-    pub fn write_bytes(&self, buf: &mut Vec<u8>) {
+    pub fn write_bytes_tobuf(&self, buf: &mut Vec<u8>) {
         buf.extend(&self.ident.to_le_bytes());
         buf.push(self.site);
+    }
+    pub fn write_bytes<W: Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_all(&self.ident.to_le_bytes())?;
+        writer.write(&[self.site])?;
+        Ok(())
     }
 }
 

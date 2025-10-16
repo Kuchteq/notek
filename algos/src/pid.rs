@@ -2,8 +2,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    io::{Read},
+    io::{Read, Write},
 };
+use anyhow::{anyhow, Context, Result};
 
 use crate::{pos::Pos, LBASE};
 
@@ -15,10 +16,17 @@ impl Pid {
     pub fn new(ident: u32) -> Pid {
         Pid(vec![Pos::new(ident, 1)])
     }
-    pub fn write_bytes(&self, buf: &mut Vec<u8>) {
+    pub fn write_bytes_buf(&self, buf: &mut Vec<u8>) {
         for pos in &self.0 {
-            pos.write_bytes(buf);
+            pos.write_bytes_tobuf(buf);
         }
+    } 
+    pub fn write_bytes<W: Write>(&self, writer: &mut W) -> Result<()> {
+        for pos in &self.0 {
+            pos.write_bytes(writer)
+                .context("Failed to write Pid position")?;
+        }
+        Ok(())
     }
     pub fn depth(&self) -> usize {
         self.0.len()

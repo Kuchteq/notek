@@ -2,8 +2,9 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::Ordering, collections::BTreeMap, io::{Cursor, Read}
+    cmp::Ordering, collections::BTreeMap, io::{Cursor, ErrorKind, Read, Write}
 };
+use anyhow::{anyhow, Context, Result};
 
 use crate::{pid::{generate_between_pids, Pid}, pos::Pos, LBASE};
 
@@ -72,7 +73,7 @@ impl Doc {
     pub fn values(&self) -> Vec<char> {
         self.content.values().cloned().collect()
     }
-    pub fn write_bytes(&self, buf: &mut Vec<u8>) {
+    pub fn write_bytes_tobuf(&self, buf: &mut Vec<u8>) {
         for (pid, ch) in &self.content {
             // encode char (UTF-8, variable length)
             let mut cbuf = [0u8; 4];
@@ -86,6 +87,35 @@ impl Doc {
             // put pid vector
             pid.write_bytes(buf);
         }
+    } 
+    pub fn write_bytes<W: Write>(&self, writer: &mut W) -> Result<()> {
+        for (pid, ch) in &self.content {
+            // Encode the char as UTF-8 (variable length)
+            let mut cbuf = [0u8; 4];
+            let encoded = ch.encode_utf8(&mut cbuf);
+
+            // Write character length (1 byte)
+            writer
+                .write_all(&[encoded.len() as u8])
+                .context("Failed to write character length")?;
+
+            // Write UTF-8 bytes
+            writer
+                .write_all(encoded.as_bytes())
+                .context("Failed to write character data")?;
+
+            // Write pid depth (1 byte)
+            writer
+                .write_all(&[pid.depth() as u8])
+                .context("Failed to write pid depth")?;
+
+            // Write pid data (delegated to Pid)
+            pid.write_bytes(writer)
+                .context("Failed to write pid bytes")?;
+        }
+
+        writer.flush().context("Failed to flush writer")?;
+        Ok(())
     }
 
     pub fn from_reader<R: Read>(reader: &mut R, n: usize) -> Self {
@@ -106,6 +136,45 @@ impl Doc {
         }
 
         Doc { content }
+    }
+    pub fn from_reader_eof<R: Read>(reader: &mut R) -> Result<Self> {
+        let mut content = BTreeMap::new();
+
+        loop {
+            let data_len = match reader.read_u8() {
+                Ok(len) => len as usize,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e).context("Failed to read data length"),
+            };
+
+            let mut bytes = [0u8; 4];
+            if let Err(e) = reader.read_exact(&mut bytes[..data_len]) {
+                if e.kind() == ErrorKind::UnexpectedEof {
+                    break;
+                } else {
+                    return Err(e).context("Failed to read data bytes");
+                }
+            }
+
+            let data = std::str::from_utf8(&bytes[..data_len])
+                .context("Invalid UTF-8 in data")?
+                .chars()
+                .next()
+                .context("No character found in data")?;
+
+            let pid_depth = match reader.read_u8() {
+                Ok(depth) => depth,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e).context("Failed to read pid depth"),
+            };
+
+            let pid = Pid::from_reader(reader, pid_depth.into());
+                
+
+            content.insert(pid, data);
+        }
+
+        Ok(Doc { content })
     }
 
     pub fn insert(&mut self, pid: Pid, c: char) {

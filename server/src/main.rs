@@ -11,7 +11,10 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 use crate::serializer::Serializer;
+use crate::state::State;
+use crate::sync::{DocSyncInfo, SyncRequests, SyncResponses};
 mod serializer;
+mod state;
 mod sync;
 
 enum DocCommand {
@@ -23,23 +26,16 @@ enum DocCommand {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind("0.0.0.0:9001").await?;
-    println!("Listening on 127.0.0.1:9001");
-
-    let (dcmd_tx, mut dcmd_rx) = mpsc::unbounded_channel::<DocCommand>();
-    let (bcast_tx, _) = broadcast::channel::<PeerMessage>(100);
+    println!("Listening on 0.0.0.0:9001");
 
     while let Ok((stream, _)) = listener.accept().await {
-        tokio::spawn(handle_connection(
-            stream,
-        ));
+        tokio::spawn(handle_connection(stream));
     }
 
     Ok(())
 }
 
-async fn handle_connection(
-    stream: tokio::net::TcpStream,
-) -> anyhow::Result<()> {
+async fn handle_connection(stream: tokio::net::TcpStream) -> anyhow::Result<()> {
     let ws = accept_async(stream).await?;
     let connection_site_id = rand::rng().random_range(0..255);
     let (mut ws_sink, mut ws_stream) = ws.split();
@@ -50,16 +46,21 @@ async fn handle_connection(
         connection_site_id
     );
 
+    let mut state = State::init("sample").unwrap();
     loop {
         tokio::select! {
             Some(msg) = ws_stream.next() => {
                     let msg = msg?;
                     if let Message::Binary(bin) = msg {
-
+                        let req = SyncRequests::deserialize((&bin).to_vec());
+                        match req {
+                            SyncRequests::SyncList { last_sync_time } => {
+                                SyncResponses::SyncList(state.docs.iter().map(|( k,v )| DocSyncInfo::new(*k, v.id)).collect());
+                            },
+                            SyncRequests::SyncDoc { last_sync_time, document_id } => todo!(),
+                        }
                     }
             }
         }
     }
-
-    Ok(())
 }

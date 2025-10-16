@@ -1,6 +1,9 @@
-use algos::pid::Pid;
+use std::{io::Cursor, panic};
 
-enum SyncRequests {
+use algos::pid::Pid;
+use byteorder::{LittleEndian, ReadBytesExt};
+
+pub enum SyncRequests {
     // epoch miliseconds u64
     SyncList {
         last_sync_time: u64,
@@ -11,12 +14,39 @@ enum SyncRequests {
     },
 }
 
-enum SyncResponses {
+impl SyncRequests {
+    pub fn deserialize(buf: Vec<u8>) -> Self {
+        let mut cur = Cursor::new(buf);
+        match cur.read_u8().unwrap() {
+            0u8 => SyncRequests::SyncList {
+                last_sync_time: cur.read_u64::<LittleEndian>().unwrap(),
+            },
+            1u8 => SyncRequests::SyncDoc {
+                last_sync_time: cur.read_u64::<LittleEndian>().unwrap(),
+                document_id: cur.read_u128::<LittleEndian>().unwrap(),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+pub enum SyncResponses {
     SyncList(Vec<DocSyncInfo>),
     SyncDoc {
         document_id: u128,
         updates: Vec<DocOp>,
     },
+}
+
+pub struct DocSyncInfo {
+    last_mod_time: u64,
+    document_id: u128,
+}
+
+impl DocSyncInfo {
+    pub fn new(last_mod_time: u64, document_id: u128) -> Self {
+        Self { last_mod_time, document_id }
+    }
 }
 
 impl SyncResponses {
@@ -26,7 +56,7 @@ impl SyncResponses {
                 let mut buf = vec![2u8];
                 buf.extend((doc_sync_infos.len() as u64).to_le_bytes());
                 for doc in doc_sync_infos {
-                    buf.extend(doc.last_sync_time.to_le_bytes());
+                    buf.extend(doc.last_mod_time.to_le_bytes());
                     buf.extend(doc.document_id.to_le_bytes());
                 }
                 buf
@@ -69,12 +99,7 @@ impl DocOp {
                 buf.push(1);
                 buf.push(pid.0.len() as u8);
                 pid.write_bytes(buf);
-
-            },
+            }
         }
     }
-}
-struct DocSyncInfo {
-    last_sync_time: u64,
-    document_id: u128,
 }

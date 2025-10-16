@@ -25,7 +25,7 @@ impl PeerMessage {
                 buf.push(*site);
                 // put numberofatoms
                 buf.extend((doc.len() as u64).to_le_bytes());
-                doc.write_bytes(&mut buf);
+                doc.write_bytes_tobuf(&mut buf);
                 buf
             }
             PeerMessage::Insert { site, pid, c } => {
