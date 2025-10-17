@@ -1,9 +1,7 @@
 package org.example
 
 import Pid
-import kotlinx.io.Buffer
-import kotlinx.io.
-import kotlinx.io.readULongLe
+import kotlinx.io.*
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.IOException
@@ -14,36 +12,13 @@ import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalUuidApi::class)
 sealed class SyncRequests {
-    data class SyncList(val lastSyncTime: Long) : SyncRequests()
-    data class SyncDoc(val lastSyncTime: Long, val documentId: Uuid) : SyncRequests()
+    data class SyncList(val lastSyncTime: ULong) : SyncRequests()
+    data class SyncDoc(val lastSyncTime: ULong, val documentId: Uuid) : SyncRequests()
 
-    fun serialize(): ByteArray {
-        val buf = ByteArrayOutputStream()
-        when (this) {
-            is SyncList -> {
-                buf.write(0)
-                val lastSyncTimeBytes = ByteBuffer.allocate(8)
-                    .order(ByteOrder.LITTLE_ENDIAN)
-                    .putLong(lastSyncTime)
-                    .array()
-                buf.write(lastSyncTimeBytes)
-            }
-
-            is SyncDoc -> {
-                buf.write(1)
-                val lastSyncTimeBytes = ByteBuffer.allocate(8)
-                    .order(ByteOrder.LITTLE_ENDIAN)
-                    .putLong(lastSyncTime)
-                    .array()
-                buf.write(lastSyncTimeBytes)
-                buf.write(documentId.toByteArray())
-            }
-        }
-        return buf.toByteArray()
-    }
 }
 
-data class DocSyncInfo(val lastModTime: Long, val documentId: ULong)
+@OptIn(ExperimentalUuidApi::class)
+data class DocSyncInfo(val lastModTime: ULong, val documentId: Uuid)
 
 sealed class DocOp {
     data class Insert(val pid: Pid, val ch: Char) : DocOp()
@@ -52,27 +27,18 @@ sealed class DocOp {
 
 
         companion object {
-            fun deserialize(input: Input): DocOp {
-                val tag = input.readByte().toInt() and 0xFF
-
-                return when (tag) {
-                    0 -> { // Insert
-                        val len = input.readByte().toInt() and 0xFF
-                        val bytes = input.readByteArray(len)
-                        val ch = bytes.toString(Charsets.UTF_8)[0]
-
-                        val depth = input.readByte().toInt() and 0xFF
-                        val pid = Pid.fromReader(input, depth)
-                        Insert(pid, ch)
+            fun deserialize(source: Source) : DocOp {
+                when (source.readUByte().toUInt()) {
+                    0u -> {
+                        val data_len = source.readUByte().toInt();
+                        val data = source.readByteArray(data_len)
+                        val char = data.toString(Charsets.UTF_8)[0]
+                        val pid_depth = source.readUByte()
+                        Pid.fromSource(source, pid_depth.toInt())
                     }
+                    1u -> {
 
-                    1 -> { // Delete
-                        val depth = input.readByte().toInt() and 0xFF
-                        val pid = Pid.fromReader(input, depth)
-                        Delete(pid)
                     }
-
-                    else -> throw IOException("Unknown DocOp tag: $tag")
                 }
             }
         }
@@ -97,46 +63,36 @@ sealed class DocOp {
         }
     }
 
+@OptIn(ExperimentalUuidApi::class)
     sealed class SyncResponses {
         data class SyncList(val docs: List<DocSyncInfo>) : SyncResponses()
         data class SyncDoc(val documentId: ULong, val updates: List<DocOp>) : SyncResponses()
         companion object {
-            fun deserialize(buf: ByteArray): SyncResponses {
-                val input = Buffer().apply { write(buf) }
-
-                return when (input.readByte().toInt() and 0xFF) {
-                    2 -> { // SyncList
-                        val count = input.readULongLe().toInt()
-                        val docs = buildList {
-                            repeat(count) {
-                                val lastModTime = input.readLong()
-                                val low = input.readLong().toULong()
-                                val high = input.readLong().toULong()
-                                val documentId = low or (high shl 64)
-                                add(DocSyncInfo(lastModTime, documentId))
-                            }
+            fun deserialize(source: Source) : SyncResponses {
+                val header = source.readUByte().toUInt()
+                when (header) {
+                    0u -> {
+                        val numberOfDocuments = source.readULongLe();
+                        val docs = mutableListOf<DocSyncInfo>()
+                        repeat (numberOfDocuments.toInt()) {
+                            val lastModified = source.readULongLe()
+                            val docIdBa = source.readByteArray(16)
+                            val docId = Uuid.fromByteArray(docIdBa)
+                            docs.add(DocSyncInfo(lastModified, docId))
                         }
-                        SyncList(docs)
+                        return SyncList(docs)
                     }
+                    1u -> {
+                        val docIdBa = source.readByteArray(16)
+                        val docId = Uuid.fromByteArray(docIdBa)
+                        val syncStyle = source.readUByte()
+                        val numberOfAtoms = source.readULongLe()
+                        repeat(numberOfAtoms.toInt()) {
 
-                    3 -> { // SyncDoc
-                        val low = input.readULongLe()
-                        val high = input.readULongLe()
-                        val documentId = low or (high shl 64)
-
-                        input.readByte() // skip placeholder
-                        val updateCount = input.readLong().toInt()
-
-                        val updates = buildList {
-                            repeat(updateCount) {
-                                add(DocOp.deserialize(input))
-                            }
                         }
 
-                        SyncDoc(documentId, updates)
                     }
-
-                    else -> error("Unknown SyncResponses tag")
                 }
             }
         }
+    }
