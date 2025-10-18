@@ -9,12 +9,32 @@ use std::{
 use algos::doc::Doc;
 use anyhow::{Result, anyhow};
 use byteorder::{LittleEndian, ReadBytesExt};
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
+
+use crate::sync::{DocSyncInfo, SyncResponses};
 
 #[derive(Debug)]
 pub struct State {
     pub docs: BTreeMap<u64, DocStructure>,
 }
+
+pub enum StateCommand {
+    GetSyncFullDoc {
+        document_id: u128,
+        // The server responds already with a serialized buffer
+        respond_to: oneshot::Sender<Vec<u8>>,
+    },
+    GetSyncList {
+        last_sync_time: u64,
+        respond_to: oneshot::Sender<Vec<u8>>,
+    },
+    UpdateDoc {
+        document_id: u128,
+        doc: DocStructure,
+    },
+}
+
 impl State {
     pub fn init(dir: &str) -> Result<Self> {
         let mut d = BTreeMap::new();
@@ -23,7 +43,6 @@ impl State {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("md") {
-
                 let name = path
                     .to_str()
                     .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
@@ -31,24 +50,82 @@ impl State {
 
                 let structure = DocStructure::init_from_filepath(name)?;
                 d.insert(structure.last_modified, structure);
-
             }
         }
         Ok(State { docs: d })
     }
-}
 
+    pub fn get_doc(&mut self, document_id: u128) -> &Doc {
+        self.docs.values_mut().find(|d| d.id == document_id).unwrap().get_doc()
+    }
+
+    pub async fn run_state_manager(mut self, mut rx: mpsc::Receiver<StateCommand>) {
+
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                StateCommand::GetSyncFullDoc {
+                    document_id,
+                    respond_to,
+                } => {
+                    let doc = self.get_doc(document_id);
+                    let r = SyncResponses::SyncFullDoc { document_id: document_id, doc: doc };
+                    let mut buf = Vec::new();
+                    r.serialize_into(&mut buf);
+                    let _ = respond_to.send(buf);
+                }
+                StateCommand::GetSyncList { last_sync_time, respond_to } => {
+                    let docs = self
+                        .docs
+                        .iter()
+                        .map(|(k, v)| DocSyncInfo::new(*k, v.id))
+                        .collect();
+                    let r = SyncResponses::SyncList(docs);
+                    let mut buf = Vec::new();
+                    r.serialize_into(&mut buf);
+                    let _ = respond_to.send(buf);
+                }
+                StateCommand::UpdateDoc { document_id, doc } => {
+
+                }
+                
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct DocStructure {
     pub id: u128,
     last_modified: u64, // todo, change this, this field shouldn't be duplicating the key of the
-                        // btree
+    // btree
     name: String,
-    state: DocState,
+    pub state: DocState,
 }
 
 impl DocStructure {
+    fn load_state(&mut self) -> Result<()> {
+        let structure_path = &format!("{}.structure", self.name);
+        let structure_path = Path::new(structure_path);
+
+        let file = File::open(structure_path)?;
+        let mut reader = BufReader::new(file);
+        reader.seek_relative(24)?;
+        let doc = Doc::from_reader_eof(&mut reader)?;
+        self.state = DocState::Cached(doc);
+        Ok(())
+    }
+    fn get_doc(&mut self) -> &Doc {
+        match self.state {
+            DocState::Missing => self.load_state().unwrap(),
+            DocState::Cached(_) => {}
+        }
+
+        if let DocState::Cached(doc) = &self.state {
+            doc
+        } else {
+            unreachable!()
+        }
+    }
     fn init_from_filepath(name: String) -> Result<DocStructure> {
         let structure_path = &format!("{}.structure", name);
         let structure_path = Path::new(structure_path);
