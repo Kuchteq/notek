@@ -8,12 +8,13 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::sync::{DocSyncInfo, SyncResponses};
+use crate::sync::{DocOp, DocSyncInfo, SyncResponses};
 
 #[derive(Debug)]
 pub struct State {
-    pub docs: BTreeMap<u64, Rc<DocStructure>>,
-    pub by_id: HashMap<u128, Rc<DocStructure>>,
+    pub docs: Vec<DocStructure>,
+    pub by_time: BTreeMap<u64, usize>,
+    pub by_id: HashMap<u128, usize>,
 }
 
 pub enum StateCommand {
@@ -29,12 +30,14 @@ pub enum StateCommand {
     },
     UpdateDoc {
         document_id: u128,
-        doc: DocStructure,
+        op: DocOp,
     },
 }
 
 impl State {
     pub fn init(dir: &str) -> Result<Self> {
+        let mut docs = Vec::new();
+        let mut doc_idx = 0;
         let mut dt = BTreeMap::new();
         let mut di = HashMap::new();
         for entry in fs::read_dir(dir)? {
@@ -47,17 +50,19 @@ impl State {
                     .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
                     .to_string();
 
-                let structure = DocStructure::init_from_filepath(name)?;
-                let s = Rc::new(structure);
-                dt.insert(s.last_modified, s.clone());
-                di.insert(s.id, s);
+                let s = DocStructure::init_from_filepath(name)?;
+                dt.insert(s.last_modified, doc_idx);
+                di.insert(s.id, doc_idx);
+                docs.push(s);
+                doc_idx+=1;
             }
         }
-        Ok(State { docs: dt, by_id: di })
+        Ok(State { docs: docs, by_time: dt, by_id: di })
     }
 
     pub fn get_doc(&self, document_id: u128) -> &Doc {
-        self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
+        self.docs[self.by_id[&document_id]].get_doc()
+        // self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
     }
 
     pub async fn run_state_manager(mut self, mut rx: mpsc::Receiver<StateCommand>) {
@@ -75,18 +80,19 @@ impl State {
                 }
                 StateCommand::GetSyncList { last_sync_time, respond_to } => {
                     let docs = self
-                        .docs
+                        .by_time
                         .iter()
-                        .map(|(k, v)| DocSyncInfo::new(*k, v.id))
+                        // .filter(|&(&t, _)| t >= last_sync_time)
+                        .map(|(&t, &i)| DocSyncInfo::new(t, self.docs[i].id))
                         .collect();
                     let r = SyncResponses::SyncList(docs);
                     let mut buf = Vec::new();
                     r.serialize_into(&mut buf);
                     let _ = respond_to.send(buf);
                 }
-                StateCommand::UpdateDoc { document_id, doc } => {
-                    let d = self.by_id.get(&document_id).unwrap();
-                    // d.name = String::new();
+                StateCommand::UpdateDoc { document_id, op } => {
+                    let ds = &mut self.docs[self.by_id[&document_id]];
+                    ds.apply(op);
                 }
                 
             }
@@ -125,6 +131,18 @@ impl DocStructure {
             doc
         } else {
             unreachable!()
+        }
+    }
+    fn apply(&mut self, op: DocOp) {
+        match &mut self.state {
+            DocState::Missing => {} // TODO self.load_state().unwrap(),
+            DocState::Cached(doc) => {
+                match op {
+                    DocOp::Insert(pid, c) => doc.insert(pid, c),
+                    DocOp::Delete(pid) => doc.delete(&pid),
+                }
+                
+            }
         }
     }
     fn init_from_filepath(name: String) -> Result<DocStructure> {

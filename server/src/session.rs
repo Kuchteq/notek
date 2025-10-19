@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};
 use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
 
-use crate::state::StateCommand;
+use crate::{state::StateCommand, sync::DocOp};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SessionMessage {
@@ -72,11 +72,15 @@ impl SessionMessage {
     pub fn deserialize(buf: &[u8]) -> SessionMessage {
         let mut cur = Cursor::new(buf);
         match cur.read_u8().unwrap() {
-            0u8 => SessionMessage::Start {
-                document_id: 1,
-                last_sync_time: 1,
+            64u8 => {
+                let last_sync_time = cur.read_u64::<LittleEndian>().unwrap();
+                let document_id = cur.read_u128::<LittleEndian>().unwrap();
+                SessionMessage::Start {
+                    document_id,
+                    last_sync_time,
+                }
             },
-            1u8 => {
+            65u8 => {
                 let site = cur.read_u8().unwrap();
                 let number_of_atoms = cur.read_u64::<LittleEndian>().unwrap() as usize;
                 SessionMessage::NewSession {
@@ -84,7 +88,7 @@ impl SessionMessage {
                     doc: Doc::from_reader(&mut cur, number_of_atoms),
                 }
             }
-            2u8 => {
+            66u8 => {
                 let site = cur.read_u8().unwrap();
                 let data_len = cur.read_u8().unwrap() as usize;
                 let mut bytes = [0u8; 4];
@@ -102,7 +106,7 @@ impl SessionMessage {
                     c: data,
                 }
             }
-            3u8 => {
+            67u8 => {
                 let site = cur.read_u8().unwrap();
                 let pid_depth = cur.read_u8().unwrap();
                 let pid = Pid::from_reader(&mut cur, pid_depth as usize);
@@ -116,16 +120,19 @@ impl SessionMessage {
     }
 }
 
-struct SessionMember {
+pub struct SessionMember {
     document_id: u128,
-    connection_site_id: u8
+    connection_site_id: u8,
 }
 
 impl SessionMember {
-    fn init() -> Self {
-        SessionMember { connection_site_id: 0, document_id: 0 }
+    pub fn init() -> Self {
+        SessionMember {
+            connection_site_id: 0,
+            document_id: 0,
+        }
     }
-    async fn handle_session_request(
+    pub async fn handle_session_request(
         &mut self,
         bin: Vec<u8>,
         state_tx: &mpsc::Sender<StateCommand>,
@@ -140,11 +147,21 @@ impl SessionMember {
             } => {
                 self.document_id = document_id;
                 self.connection_site_id = rand::rng().random_range(0..255);
-            },
+            }
             SessionMessage::Insert { site, pid, c } => {
-
-            },
-            SessionMessage::Delete { site, pid } => todo!(),
+                let op = DocOp::Insert(pid, c);
+                state_tx.send(StateCommand::UpdateDoc {
+                    document_id: self.document_id,
+                    op,
+                });
+            }
+            SessionMessage::Delete { site, pid } => {
+                let op = DocOp::Delete(pid);
+                state_tx.send(StateCommand::UpdateDoc {
+                    document_id: self.document_id,
+                    op,
+                });
+            }
             SessionMessage::NewSession { site, doc } => todo!(),
         }
         Ok(())

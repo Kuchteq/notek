@@ -127,7 +127,7 @@ impl SyncResponses<'_> {
     }
 }
 
-enum DocOp {
+pub enum DocOp {
     Insert(Pid, char),
     Delete(Pid),
 }

@@ -3,11 +3,11 @@ use algos::msg::PeerMessage;
 use algos::pid::Pid;
 use futures::stream::SplitSink;
 use rand::Rng;
-use tokio::task::LocalSet;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Bytes;
+use anyhow::{Result, anyhow};
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 use crate::serializer::Serializer;
-use crate::session::SessionMessage;
+use crate::session::{SessionMember, SessionMessage};
 use crate::state::{State, StateCommand};
 use crate::sync::{DocSyncInfo, SyncRequests, SyncResponses};
 mod serializer;
@@ -34,27 +34,16 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind("0.0.0.0:9001").await?;
     println!("Listening on 0.0.0.0:9001");
 
-    let (tx, rx) = mpsc::channel(100);
+    let (tx, rx) = mpsc::channel(100); // shared channel to state manager
 
-    // your state manager is NOT Send — so it goes on a LocalSet
-    let local = LocalSet::new();
-    let state_task = async move {
-        let mut state = State::init("sample")?;
+    tokio::spawn(async {
+    let mut state = State::init("sample").unwrap();
         state.run_state_manager(rx).await;
-        Ok::<_, anyhow::Error>(())
-    };
+    });
 
-    // spawn your actor locally (not Send!)
-    local.spawn_local(state_task);
-
-    // Run LocalSet alongside your normal async I/O tasks
-    local
-        .run_until(async move {
-            while let Ok((stream, _)) = listener.accept().await {
-                tokio::spawn(handle_connection(stream, tx.clone()));
-            }
-        })
-        .await;
+    while let Ok((stream, _)) = listener.accept().await {
+        tokio::spawn(handle_connection(stream, tx.clone()));
+    }
 
     Ok(())
 }
@@ -64,12 +53,6 @@ async fn handle_connection(
     state_tx: mpsc::Sender<StateCommand>,
 ) -> anyhow::Result<()> {
     let mut ws = accept_async(stream).await?;
-    let connection_site_id = rand::rng().random_range(0..255);
-
-    println!(
-        "New WebSocket connection, assigned id: {}",
-        connection_site_id
-    );
 
     if let Some(msg) = ws.next().await {
         let msg = msg?;
@@ -110,7 +93,18 @@ async fn start_handling_session_requests(
     ws: WebSocketStream<TcpStream>,
 ) -> anyhow::Result<()> {
     let (mut ws_sink, mut ws_stream) = ws.split();
-        
+    if first_bin[0] != 64 {
+        anyhow!("First session message should be a start!");
+    }
+    let mut session = SessionMember::init();
+    session.handle_session_request(first_bin, &state_tx, &mut ws_sink).await?;
+    
+    while let Some(msg) = ws_stream.next().await {
+        let msg = msg?;
+        if let Message::Binary(bin) = msg {
+        session.handle_session_request(bin.to_vec(), &state_tx, &mut ws_sink).await?;
+        }
+    }
     Ok(())
 }
 async fn handle_sync_request(

@@ -3,43 +3,93 @@
  */
 package org.example
 import Doc
+import generate_between_pids
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 
 import io.ktor.http.*
+import kotlinx.io.Buffer
+import kotlinx.io.readByteArray
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUuidApi::class)
 suspend fun main() {
     val client = HttpClient(CIO) {
         install(WebSockets)
     }
     println("Hello")
     var doc = Doc.fromString("local", 0.toUByte());
+    var docid = Uuid.random();
     client.ws(method = HttpMethod.Get, host = "127.0.0.1", port=9001, path = "/") {
         // send a message
-        val bytes = PeerMessage.Greet.serialize();
-        send(bytes)
-
+        val sr = SyncRequests.SyncList(0u)
+        val bytes = Buffer();
+        sr.serialize(bytes)
+        send(bytes.readByteArray())
+        println("Sent message")
         // receive a message
         for (frame in incoming) {
-            val v = PeerMessage.deserialize(frame.data)
-            when (v) {
-                is PeerMessage.NewSession -> {
-                    doc = v.doc;
+            println("Received one")
+            val buffer = Buffer()
+            buffer.write(frame.readBytes())
+            val resp = SyncResponses.deserialize(buffer)
+            println("Doc state: ${resp}")
+            when (resp) {
+                is SyncResponses.SyncList -> {
+                    docid = resp.docs[0].documentId;
+                    break
+                    val sr = SyncRequests.SyncDoc(0u, resp.docs[0].documentId)
+                    val bytes = Buffer();
+                    sr.serialize(bytes)
+                    send(bytes.readByteArray())
                 }
-
-                is PeerMessage.Delete -> {
-                    doc.delete(v.pid)
-                }
-                PeerMessage.Greet -> TODO()
-                is PeerMessage.Insert -> {
-                    doc.insert(v.pid, v.c)
-                }
+                else -> {}
             }
-            println("Doc state: ${doc.display()}")
         }
+    }
+    client.ws(method = HttpMethod.Get, host = "127.0.0.1", port=9001, path = "/") {
+        val greet = PeerMessage.Start(0u, docid)
+        send(greet.serialize())
+        val lp = doc.content.keys
+//        generate_between_pids(doc.content.keys()[0], doc.content.keys[1])
+        val insert = PeerMessage.Insert(0, )
     }
 
     client.close()
 }
+//suspend fun main() {
+//    val client = HttpClient(CIO) {
+//        install(WebSockets)
+//    }
+//    println("Hello")
+//    var doc = Doc.fromString("local", 0.toUByte());
+//    client.ws(method = HttpMethod.Get, host = "127.0.0.1", port=9001, path = "/") {
+//        // send a message
+//        val bytes = PeerMessage.Greet.serialize();
+//        send(bytes)
+//
+//        // receive a message
+//        for (frame in incoming) {
+//            val v = PeerMessage.deserialize(frame.data)
+//            when (v) {
+//                is PeerMessage.NewSession -> {
+//                    doc = v.doc;
+//                }
+//
+//                is PeerMessage.Delete -> {
+//                    doc.delete(v.pid)
+//                }
+//                PeerMessage.Greet -> TODO()
+//                is PeerMessage.Insert -> {
+//                    doc.insert(v.pid, v.c)
+//                }
+//            }
+//            println("Doc state: ${doc.display()}")
+//        }
+//    }
+//
+//    client.close()
+//}
