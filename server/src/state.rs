@@ -1,9 +1,5 @@
 use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::{BufReader, BufWriter, Write},
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
+    collections::{BTreeMap, HashMap}, fs::{self, File}, io::{BufReader, BufWriter, Write}, path::Path, rc::Rc, time::{SystemTime, UNIX_EPOCH}
 };
 
 use algos::doc::Doc;
@@ -16,17 +12,19 @@ use crate::sync::{DocSyncInfo, SyncResponses};
 
 #[derive(Debug)]
 pub struct State {
-    pub docs: BTreeMap<u64, DocStructure>,
+    pub docs: BTreeMap<u64, Rc<DocStructure>>,
+    pub by_id: HashMap<u128, Rc<DocStructure>>,
 }
 
 pub enum StateCommand {
     GetSyncFullDoc {
         document_id: u128,
-        // The server responds already with a serialized buffer
+        // The state manager responds already with a serialized buffer
         respond_to: oneshot::Sender<Vec<u8>>,
     },
     GetSyncList {
         last_sync_time: u64,
+        // The state manager responds already with a serialized buffer
         respond_to: oneshot::Sender<Vec<u8>>,
     },
     UpdateDoc {
@@ -37,7 +35,8 @@ pub enum StateCommand {
 
 impl State {
     pub fn init(dir: &str) -> Result<Self> {
-        let mut d = BTreeMap::new();
+        let mut dt = BTreeMap::new();
+        let mut di = HashMap::new();
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -49,18 +48,19 @@ impl State {
                     .to_string();
 
                 let structure = DocStructure::init_from_filepath(name)?;
-                d.insert(structure.last_modified, structure);
+                let s = Rc::new(structure);
+                dt.insert(s.last_modified, s.clone());
+                di.insert(s.id, s);
             }
         }
-        Ok(State { docs: d })
+        Ok(State { docs: dt, by_id: di })
     }
 
-    pub fn get_doc(&mut self, document_id: u128) -> &Doc {
-        self.docs.values_mut().find(|d| d.id == document_id).unwrap().get_doc()
+    pub fn get_doc(&self, document_id: u128) -> &Doc {
+        self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
     }
 
     pub async fn run_state_manager(mut self, mut rx: mpsc::Receiver<StateCommand>) {
-
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 StateCommand::GetSyncFullDoc {
@@ -85,7 +85,8 @@ impl State {
                     let _ = respond_to.send(buf);
                 }
                 StateCommand::UpdateDoc { document_id, doc } => {
-
+                    let d = self.by_id.get(&document_id).unwrap();
+                    // d.name = String::new();
                 }
                 
             }
@@ -114,9 +115,9 @@ impl DocStructure {
         self.state = DocState::Cached(doc);
         Ok(())
     }
-    fn get_doc(&mut self) -> &Doc {
+    fn get_doc(&self) -> &Doc {
         match self.state {
-            DocState::Missing => self.load_state().unwrap(),
+            DocState::Missing => {} // TODO self.load_state().unwrap(),
             DocState::Cached(_) => {}
         }
 
