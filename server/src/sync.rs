@@ -7,6 +7,8 @@ use algos::{doc::Doc, pid::Pid};
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
 
+
+#[derive(Debug)]
 pub enum SyncRequests {
     // epoch miliseconds u64
     SyncList {
@@ -34,6 +36,7 @@ impl SyncRequests {
     }
 }
 
+#[derive(Debug)]
 pub enum SyncResponses<'a> {
     SyncList(Vec<DocSyncInfo>),
     SyncOpDoc {
@@ -46,6 +49,7 @@ pub enum SyncResponses<'a> {
     },
 }
 
+#[derive(Debug)]
 pub struct DocSyncInfo {
     last_mod_time: u64,
     document_id: u128,
@@ -127,6 +131,7 @@ impl SyncResponses<'_> {
     }
 }
 
+#[derive(Debug)]
 pub enum DocOp {
     Insert(Pid, char),
     Delete(Pid),

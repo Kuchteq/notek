@@ -140,6 +140,7 @@ impl SessionMember {
     ) -> anyhow::Result<()> {
         let req = SessionMessage::deserialize(&bin.to_vec());
 
+    println!("{:#?}", req);
         match req {
             SessionMessage::Start {
                 document_id,
@@ -147,20 +148,21 @@ impl SessionMember {
             } => {
                 self.document_id = document_id;
                 self.connection_site_id = rand::rng().random_range(0..255);
+                println!("started a sesh");
             }
             SessionMessage::Insert { site, pid, c } => {
                 let op = DocOp::Insert(pid, c);
                 state_tx.send(StateCommand::UpdateDoc {
                     document_id: self.document_id,
                     op,
-                });
+                }).await;
             }
             SessionMessage::Delete { site, pid } => {
                 let op = DocOp::Delete(pid);
                 state_tx.send(StateCommand::UpdateDoc {
                     document_id: self.document_id,
                     op,
-                });
+                }).await;
             }
             SessionMessage::NewSession { site, doc } => todo!(),
         }

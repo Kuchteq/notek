@@ -27,7 +27,6 @@ sealed class PeerMessage {
                     .order(ByteOrder.LITTLE_ENDIAN)
                     .putLong(this.lastSyncTime.toLong())
                     .array()
-                buf.write(lastSyncBytes)
                 val uuidBytes = ByteBuffer.allocate(16)
                     .order(ByteOrder.LITTLE_ENDIAN)
                     .putUuid(this.documentId)

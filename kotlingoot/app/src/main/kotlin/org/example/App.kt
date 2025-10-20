@@ -54,8 +54,9 @@ suspend fun main() {
         val greet = PeerMessage.Start(0u, docid)
         send(greet.serialize())
         val lp = doc.content.keys
-//        generate_between_pids(doc.content.keys()[0], doc.content.keys[1])
-        val insert = PeerMessage.Insert(0, )
+        val pt = generate_between_pids(doc.content.firstKey(), doc.content.lastKey(), 0u)
+        val insert = PeerMessage.Insert(0u, pt, 'k')
+        send(insert.serialize())
     }
 
     client.close()

@@ -1,13 +1,13 @@
 use algos::doc::Doc;
 use algos::msg::PeerMessage;
 use algos::pid::Pid;
+use anyhow::{Result, anyhow};
 use futures::stream::SplitSink;
 use rand::Rng;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Bytes;
-use anyhow::{Result, anyhow};
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -19,9 +19,9 @@ use crate::session::{SessionMember, SessionMessage};
 use crate::state::{State, StateCommand};
 use crate::sync::{DocSyncInfo, SyncRequests, SyncResponses};
 mod serializer;
+mod session;
 mod state;
 mod sync;
-mod session;
 
 enum DocCommand {
     Insert(u8, Pid, char),
@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(100); // shared channel to state manager
 
     tokio::spawn(async {
-    let mut state = State::init("sample").unwrap();
+        let mut state = State::init("sample").unwrap();
         state.run_state_manager(rx).await;
     });
 
@@ -61,7 +61,9 @@ async fn handle_connection(
                 0..63 => {
                     start_handling_sync_requests(bin.to_vec(), state_tx, ws).await;
                 }
-                _ => { start_handling_session_requests(bin.to_vec(), state_tx, ws).await; }
+                _ => {
+                    start_handling_session_requests(bin.to_vec(), state_tx, ws).await;
+                }
             }
         }
     }
@@ -84,7 +86,6 @@ async fn start_handling_sync_requests(
     }
 
     Ok(())
-
 }
 
 async fn start_handling_session_requests(
@@ -97,12 +98,16 @@ async fn start_handling_session_requests(
         anyhow!("First session message should be a start!");
     }
     let mut session = SessionMember::init();
-    session.handle_session_request(first_bin, &state_tx, &mut ws_sink).await?;
-    
+    session
+        .handle_session_request(first_bin, &state_tx, &mut ws_sink)
+        .await?;
+
     while let Some(msg) = ws_stream.next().await {
         let msg = msg?;
         if let Message::Binary(bin) = msg {
-        session.handle_session_request(bin.to_vec(), &state_tx, &mut ws_sink).await?;
+            session
+                .handle_session_request(bin.to_vec(), &state_tx, &mut ws_sink)
+                .await?;
         }
     }
     Ok(())
@@ -113,6 +118,8 @@ async fn handle_sync_request(
     ws_sink: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
 ) -> anyhow::Result<()> {
     let req = SyncRequests::deserialize(bin);
+
+    println!("{:#?}", req);
     match req {
         SyncRequests::SyncList { .. } => {
             let (resp_tx, resp_rx) = oneshot::channel();

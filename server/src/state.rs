@@ -17,6 +17,7 @@ pub struct State {
     pub by_id: HashMap<u128, usize>,
 }
 
+#[derive(Debug)]
 pub enum StateCommand {
     GetSyncFullDoc {
         document_id: u128,
@@ -50,9 +51,12 @@ impl State {
                     .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
                     .to_string();
 
-                let s = DocStructure::init_from_filepath(name)?;
-                dt.insert(s.last_modified, doc_idx);
+                let mut s = DocStructure::init_from_filepath(name)?;
                 di.insert(s.id, doc_idx);
+                if dt.contains_key(&s.last_modified) {
+                    s.last_modified += 1;
+                }
+                dt.insert(s.last_modified, doc_idx);
                 docs.push(s);
                 doc_idx+=1;
             }
@@ -67,6 +71,8 @@ impl State {
 
     pub async fn run_state_manager(mut self, mut rx: mpsc::Receiver<StateCommand>) {
         while let Some(cmd) = rx.recv().await {
+
+            println!("the cmd {:#?}", cmd);
             match cmd {
                 StateCommand::GetSyncFullDoc {
                     document_id,
@@ -86,6 +92,7 @@ impl State {
                         .map(|(&t, &i)| DocSyncInfo::new(t, self.docs[i].id))
                         .collect();
                     let r = SyncResponses::SyncList(docs);
+                    println!("the synclist {:#?}", r);
                     let mut buf = Vec::new();
                     r.serialize_into(&mut buf);
                     let _ = respond_to.send(buf);
@@ -93,6 +100,7 @@ impl State {
                 StateCommand::UpdateDoc { document_id, op } => {
                     let ds = &mut self.docs[self.by_id[&document_id]];
                     ds.apply(op);
+                    println!("{:#?}", ds)
                 }
                 
             }
