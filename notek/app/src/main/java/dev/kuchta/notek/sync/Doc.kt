@@ -1,3 +1,4 @@
+import kotlinx.io.*
 import java.io.DataInputStream
 import java.util.TreeMap
 import kotlin.math.max
@@ -10,6 +11,29 @@ data class Doc(
     val site: UByte
 ) {
     companion object {
+        fun fromSource(source: Source, n: Int): Doc {
+            val content = TreeMap<Pid, Char>() // same semantics as TreeMap
+
+            repeat(n) {
+                // Read the UTF-8 character length (1–4 bytes)
+                val dataLen = source.readUByte().toInt()
+
+                // Read up to 4 bytes of UTF-8 data
+                val data = source.readByteArray(dataLen)
+                val char = data.toString(Charsets.UTF_8)[0]
+
+                // Read pid depth and pid itself
+                val pidDepth = source.readUByte().toInt()
+                val pid = Pid.fromSource(source, pidDepth)
+
+                // Insert into map
+                content[pid] = char
+            }
+
+            // Return Doc with site hard-coded as 1
+            return Doc(content, 1u)
+        }
+
         fun fromReader(reader: DataInputStream, n: Int): Doc {
             val content = TreeMap<Pid, Char>() // same semantics as BTreeMap
 

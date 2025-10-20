@@ -1,3 +1,6 @@
+import kotlinx.io.Source
+import kotlinx.io.readUByte
+import kotlinx.io.readUIntLe
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.nio.ByteBuffer
@@ -23,6 +26,18 @@ class Pid(val positions: MutableList<Pos>) : Comparable<Pid> {
                 // Read 1 byte for site
                 val site = reader.readUnsignedByte().toUByte()
 
+                positions.add(Pos(ident, site))
+            }
+
+            return Pid(positions)
+        }
+
+        fun fromSource(source: Source, depth: Int): Pid {
+            val positions = mutableListOf<Pos>()
+
+            repeat(depth) {
+                val ident = source.readUIntLe()
+                val site = source.readUByte()
                 positions.add(Pos(ident, site))
             }
 
