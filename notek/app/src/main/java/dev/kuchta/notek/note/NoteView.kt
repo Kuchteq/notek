@@ -1,9 +1,14 @@
 package dev.kuchta.notek.note
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Check
@@ -40,47 +45,20 @@ import dev.kuchta.notek.g
 
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
-fun NoteView(noteId: String, modifier: Modifier = Modifier) {
+fun NoteView(noteId: String, contentPadding: PaddingValues) {
     var title by remember { mutableStateOf("") }
-    var text by remember { mutableStateOf("") }
-    var expanded by rememberSaveable { mutableStateOf(true) }
-    val vibrantColors = FloatingToolbarDefaults.vibrantFloatingToolbarColors()
-    Scaffold(
-        modifier = modifier,
-        floatingActionButton = {
-            HorizontalFloatingToolbar(
-                expanded = expanded,
-                floatingActionButton = {
-                    // Match the FAB to the vibrantColors. See also StandardFloatingActionButton.
-                    FloatingToolbarDefaults.VibrantFloatingActionButton(
-                        onClick = { expanded = !expanded }
-                    ) {
-                        Icon(Icons.Filled.Add, "Localized description")
-                    }
-                },
-                colors = vibrantColors,
-                content = {
-                    IconButton(onClick = { /* doSomething() */ }) {
-                        Icon(Icons.Filled.Person, contentDescription = "Localized description")
-                    }
-                    IconButton(onClick = { /* doSomething() */ }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Localized description")
-                    }
-                    IconButton(onClick = { /* doSomething() */ }) {
-                        Icon(Icons.Filled.Favorite, contentDescription = "Localized description")
-                    }
-                    IconButton(onClick = { /* doSomething() */ }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Localized description")
-                    }
-                },
-            )
-        },
-        // When setting this to `FabPosition.Start` remember to set a
-        // `floatingActionButtonPosition = FloatingToolbarHorizontalFabPosition.Start` at the
-        // HorizontalFloatingToolbar as well.
-        floatingActionButtonPosition = FabPosition.Center,
-    ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
+    var text by remember { mutableStateOf("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus posuere feugiat odio, quis dignissim nunc dignissim nec. Etiam nec massa dolor. Duis vitae nisl posuere, lobortis enim et, dignissim massa. Duis nec erat ipsum. Vestibulum rutrum felis libero, ac tempus arcu pharetra nec. Aliquam quam ex, blandit id vestibulum et, bibendum et orci. Quisque viverra quam ante, vitae ullamcorper magna finibus et.\n" +
+            "\n" +
+            "Fusce ut lorem dictum, fermentum mi eu, pellentesque enim. Donec venenatis fringilla erat, ac porta justo pretium non. Aenean et metus egestas, pretium tortor ut, laoreet enim. Curabitur elit nisl, consectetur ut ante sit amet, pretium interdum arcu. Quisque in metus est. Pellentesque lobortis odio in orci aliquet, ac porttitor dui tristique. Suspendisse a ex justo. Donec erat velit, accumsan in libero nec, fermentum cursus dui." +
+        "\n" +
+    "In rutrum sodales purus, vel ullamcorper nisi auctor et. Curabitur hendrerit pellentesque nisi, vel rhoncus enim blandit et. Maecenas eleifend dui eu lobortis dignissim. Mauris fringilla enim consequat nulla venenatis rutrum. Proin nec odio nec mauris luctus bibendum quis a erat. Sed sed euismod felis, vel dictum lectus. In molestie velit non massa sagittis dapibus. Suspendisse pharetra mattis purus, eget scelerisque lacus mollis ut. Curabitur pretium enim nec dui eleifend, et elementum enim commodo. Aliquam ac auctor turpis. Integer in lectus dolor. Vivamus mi lorem, faucibus at egestas ac, dictum quis lorem. Integer gravida quam sed dui semper lobortis. Pellentesque aliquam erat nec nisl pulvinar, ac finibus risus euismod.") }
+
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState())
+                .padding(contentPadding)
+                .consumeWindowInsets(contentPadding)
+                .imePadding()
+        ) {
             TextField(
                 value = title,
                 onValueChange = { title = it },
@@ -109,6 +87,5 @@ fun NoteView(noteId: String, modifier: Modifier = Modifier) {
                     disabledIndicatorColor = Color.Transparent,
                 )
             )
-        }
     }
 }

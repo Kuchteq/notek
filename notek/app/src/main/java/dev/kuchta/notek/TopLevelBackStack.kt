@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import dev.kuchta.notek.NavDest
 
 class TopLevelBackStack<T: Any>(startKey: T) {
 
