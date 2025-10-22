@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.uuid.ExperimentalUuidApi
 
+@OptIn(ExperimentalUuidApi::class)
 class HomeViewModel() : ViewModel() {
     private val db = g.db
     private val dao = db.noteDao()
@@ -30,7 +32,7 @@ class HomeViewModel() : ViewModel() {
 
     fun addNote(title: String, content: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.insert(Note(title = title, content = content))
+            dao.insert(Note(name = title, content = content))
         }
     }
 

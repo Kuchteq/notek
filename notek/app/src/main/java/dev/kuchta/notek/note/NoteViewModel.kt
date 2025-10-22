@@ -1,59 +1,60 @@
 package dev.kuchta.notek.note
 
-import android.content.Context
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.kuchta.notek.Note
-import dev.kuchta.notek.NotesDatabase
 import dev.kuchta.notek.g
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUuidApi::class, FlowPreview::class)
 class NoteViewModel() : ViewModel() {
     private val db = g.db
     private val dao = db.noteDao()
 
-    private var id: Long = -1
-    val title = TextFieldState()
-    val description = TextFieldState()
+    private var id: UUID = UUID(0,0)
+    val name = TextFieldState()
+    val content= TextFieldState()
 
-    fun loadNote(noteId: Long) {
+    fun loadNote(noteId: UUID) {
         id = noteId
         viewModelScope.launch(Dispatchers.IO) {
             val note = dao.getNoteById(noteId)
             withContext(Dispatchers.Main) {
-                title.setTextAndPlaceCursorAtEnd(note?.title ?: "")
-                description.setTextAndPlaceCursorAtEnd(note?.content ?: "")
+                name.setTextAndPlaceCursorAtEnd(note?.name ?: "")
+                content.setTextAndPlaceCursorAtEnd(note?.content ?: "")
             }
         }
     }
 
     fun startNote() {
+        id = UUID.randomUUID()
         viewModelScope.launch(Dispatchers.IO) {
-            id = dao.insert(Note(0, "", ""))
+            dao.insert(Note(id, name="", content=""))
         }
     }
 
     init {
-        snapshotFlow { title.text to description.text } // observe both fields
+        snapshotFlow { name.text to content.text } // observe both fields
             .debounce(1000L) // shorter debounce
-            .onEach { (debouncedTitle, debouncedDescription) ->
+            .onEach { (debouncedName, debouncedContent) ->
                 viewModelScope.launch(Dispatchers.IO) {
                     dao.update(
                         Note(
                             id = id,
-                            title = debouncedTitle.toString(),
-                            content = debouncedDescription.toString()
+                            name = debouncedName.toString(),
+                            content = debouncedContent.toString()
                         )
                     )
                 }

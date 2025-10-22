@@ -4,12 +4,21 @@ import android.content.ContentValues
 import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+import java.util.UUID
+
+
 
 @Entity(tableName = "notes")
-data class Note(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val title: String,
-    val content: String
+data class Note (
+    @PrimaryKey()
+    val id: UUID = UUID.randomUUID(),
+    val name: String,
+    val content: String,
+    val lastSynced: Long = 0,
+    val state: ByteArray = ByteArray(0)
+
 )
 @Dao
 interface NoteDao {
@@ -18,7 +27,7 @@ interface NoteDao {
     fun getAllNotes(): Flow<List<Note>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(note: Note): Long
+    suspend fun insert(note: Note)
 
     @Update
     suspend fun update(note: Note)
@@ -26,9 +35,8 @@ interface NoteDao {
     @Delete
     suspend fun delete(note: Note)
 
-    // Optional: get one note by ID
     @Query("SELECT * FROM notes WHERE id = :id")
-    suspend fun getNoteById(id: Long): Note?
+    suspend fun getNoteById(id: UUID): Note?
 }
 
 @Database(entities = [Note::class], version = 1)

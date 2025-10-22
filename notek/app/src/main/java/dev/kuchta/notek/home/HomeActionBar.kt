@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import dev.kuchta.notek.NavDest
 import dev.kuchta.notek.g
+import java.util.UUID
 
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
@@ -34,7 +35,7 @@ fun HomeActionBar() {
         floatingActionButton = {
             // Match the FAB to the vibrantColors. See also StandardFloatingActionButton.
             FloatingToolbarDefaults.VibrantFloatingActionButton(
-                onClick = {g.navStack.add(NavDest.Note(-1))}
+                onClick = {g.navStack.add(NavDest.Note(UUID(0,0)))}
             ) {
                 Icon(Icons.Filled.Add, "Add Note")
             }

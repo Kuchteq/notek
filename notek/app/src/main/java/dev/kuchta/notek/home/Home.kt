@@ -43,6 +43,7 @@ import dev.kuchta.notek.NavDest
 import dev.kuchta.notek.g
 import dev.kuchta.notek.note.HomeViewModel
 import dev.kuchta.notek.setup.SetupViewModel
+import kotlin.uuid.ExperimentalUuidApi
 
 data class NoteOverview(
     val id: String,
@@ -51,7 +52,7 @@ data class NoteOverview(
     val lastEdited: String
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalUuidApi::class)
 @Composable
 fun Home(vm: HomeViewModel = viewModel()) {
     // Simulated connection status (in real app, this would be from a ViewModel or state)
@@ -82,7 +83,7 @@ fun Home(vm: HomeViewModel = viewModel()) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(notes) { note ->
-                    NoteCard(NoteOverview(note.id.toString(), note.title, note.content, "kurwa")) {
+                    NoteCard(NoteOverview(note.id.toString(), note.name, note.content, "kurwa")) {
                         g.navStack.add(NavDest.Note(note.id))
                     }
                 }

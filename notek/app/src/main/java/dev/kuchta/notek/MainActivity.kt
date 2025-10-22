@@ -37,6 +37,7 @@ import dev.kuchta.notek.setup.SetupView
 import dev.kuchta.notek.ui.theme.NotekTheme
 import dev.kuchta.songsnatcher.TopLevelBackStack
 import java.util.NavigableSet
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,7 +74,7 @@ fun Notek() {
 }
 sealed class NavDest {
     data object Home : NavDest()
-    data class Note(val noteId: Long) : NavDest()
+    data class Note(val noteId: UUID) : NavDest()
     data class NoteDetails(val noteId: String) : NavDest()
     data object Setup : NavDest()
 }
