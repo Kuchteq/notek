@@ -18,12 +18,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,8 +38,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.kuchta.notek.NavDest
 import dev.kuchta.notek.g
+import dev.kuchta.notek.note.HomeViewModel
+import dev.kuchta.notek.setup.SetupViewModel
 
 data class NoteOverview(
     val id: String,
@@ -42,39 +51,40 @@ data class NoteOverview(
     val lastEdited: String
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Home(modifier: Modifier = Modifier) {
+fun Home(vm: HomeViewModel = viewModel()) {
     // Simulated connection status (in real app, this would be from a ViewModel or state)
     val isConnected by remember { mutableStateOf(true) }
+    val notes by vm.notes.collectAsState()
 
-    val notes = List(50) { index ->
-        NoteOverview(
-            id = "note-$index",
-            title = "Note #$index",
-            content = "This is the content of note number $index. " +
-                    "It demonstrates scrolling in a LazyColumn with Material3 Cards.",
-            lastEdited = "2025-10-${(10 + index % 20).toString().padStart(2, '0')}"
-        )
-    }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // 🔌 Status indicator
-        ConnectionStatus(isConnected = isConnected)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 📜 Notes list
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxSize()
+    Scaffold(
+        floatingActionButton = {
+        HomeActionBar()
+        },
+        topBar = { TopAppBar(title={ConnectionStatus(isConnected = isConnected) }, actions = {
+            IconButton(onClick = {g.navStack.addTopLevel(NavDest.Setup)}) { Icon(Icons.Default.Settings, "")}
+        })}
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding).padding(horizontal = 16.dp)
         ) {
-            items(notes) { note ->
-                NoteCard(note) {
-                    g.navStack.add(NavDest.Note(note.id))
+            // 🔌 Status indicator
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 📜 Notes list
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(notes) { note ->
+                    NoteCard(NoteOverview(note.id.toString(), note.title, note.content, "kurwa")) {
+                        g.navStack.add(NavDest.Note(note.id))
+                    }
                 }
             }
         }
@@ -88,25 +98,27 @@ fun ConnectionStatus(isConnected: Boolean) {
     } else {
         Triple(Icons.Default.CloudOff, MaterialTheme.colorScheme.error, "Offline")
     }
-
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
+    ){
+
         Icon(
             imageVector = icon,
             contentDescription = text,
             tint = color,
-            modifier = Modifier.size(20.dp)
+//            modifier = Modifier.size(20.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = text,
-            color = color,
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column {
+                Text(
+                    text = text,
+                    color = color,
+                )
+                Text("notek.kuchta.dev",
+                    style = MaterialTheme.typography.bodyMedium )
+            }
+        }
 }
 
 @Composable

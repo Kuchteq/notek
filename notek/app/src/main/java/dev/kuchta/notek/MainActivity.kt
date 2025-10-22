@@ -1,5 +1,6 @@
 package dev.kuchta.notek
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -51,52 +52,33 @@ class MainActivity : ComponentActivity() {
 object g {
     lateinit var navStack: TopLevelBackStack<Any>
     lateinit var sharedPreferences: SharedPreferences
+    lateinit var db: NotesDatabase
 }
 
 @Composable
 fun Notek() {
-    val topLevelBackStack = remember { TopLevelBackStack<Any>(NavDest.Setup) }
+    val context = LocalContext.current
+    g.sharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    var startingView : NavDest = NavDest.Home
+
+    if (g.sharedPreferences.getString("serverUrl", "").orEmpty().isEmpty()) {
+        startingView = NavDest.Setup
+    }
+
+    val topLevelBackStack = remember { TopLevelBackStack<Any>(startingView) }
     g.navStack = topLevelBackStack
 
-    val context = LocalContext.current
-//    g.sharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-
+    g.db = NotesDatabase.getDatabase(context)
     NotekNavHost(topLevelBackStack)
 }
 sealed class NavDest {
     data object Home : NavDest()
-    data class Note(val noteId: String) : NavDest()
+    data class Note(val noteId: Long) : NavDest()
     data class NoteDetails(val noteId: String) : NavDest()
     data object Setup : NavDest()
 }
 @Composable
 fun NotekNavHost(navStack: TopLevelBackStack<Any>) {
-    Scaffold(modifier = Modifier.fillMaxSize(),
-        floatingActionButton = {
-            when (navStack.backStack.last()) {
-                is NavDest.Note -> NoteActionBar()
-            }
-            when (navStack.backStack.last()) {
-                is NavDest.Setup -> ExtendedFloatingActionButton(
-                    onClick = {},
-                    modifier = Modifier.imePadding(),
-                    icon = { Icon(Icons.Filled.Edit, "Extended floating action button.") },
-                    text = { Text(text = "Save") },
-                )}
-//            NavigationBar {
-//                NavigationBarItem(
-//                    icon = { Icon(Icons.Filled.Home, contentDescription = "Search") },
-//                    selected = navStack.topLevelKey is NavDest.Home,
-//                    onClick = {navStack.addTopLevel(NavDest.Home)}
-//                )
-//            }
-        },
-        floatingActionButtonPosition = when (navStack.backStack.last()) {
-            is NavDest.Note -> FabPosition.Center
-            else -> FabPosition.End
-        }
-
-        ) { innerPadding ->
 
         NavDisplay(
             backStack = navStack.backStack,
@@ -104,16 +86,16 @@ fun NotekNavHost(navStack: TopLevelBackStack<Any>) {
             entryProvider = { route ->
                 when (route) {
                     is NavDest.Home -> NavEntry(route) {
-                        Home( modifier = Modifier.padding(innerPadding) )
+                        Home()
                     }
                     is NavDest.Note -> NavEntry(route) {
-                        NoteView(noteId = route.noteId, contentPadding = innerPadding)
+                        NoteView(noteId = route.noteId)
                     }
                     is NavDest.NoteDetails -> NavEntry(route) {
-                        NoteDetailsView(noteId = route.noteId, contentPadding = innerPadding)
+                        NoteDetailsView(noteId = route.noteId)
                     }
                     is NavDest.Setup -> NavEntry(route) {
-                        SetupView(innerPadding)
+                        SetupView()
                     }
 
                     else -> {
@@ -122,5 +104,4 @@ fun NotekNavHost(navStack: TopLevelBackStack<Any>) {
                 }
             }
         )
-    }
 }
