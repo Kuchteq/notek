@@ -15,17 +15,19 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import kotlin.time.Clock.System.now
+import kotlin.time.ExperimentalTime
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-@OptIn(ExperimentalUuidApi::class, FlowPreview::class)
+@OptIn(ExperimentalUuidApi::class, FlowPreview::class, ExperimentalTime::class)
 class NoteViewModel() : ViewModel() {
     private val db = g.db
     private val dao = db.noteDao()
 
     private var id: UUID = UUID(0,0)
-    val name = TextFieldState()
-    val content= TextFieldState()
+    val name = TextFieldState("")
+    val content= TextFieldState("")
 
     fun loadNote(noteId: UUID) {
         id = noteId
@@ -41,7 +43,7 @@ class NoteViewModel() : ViewModel() {
     fun startNote() {
         id = UUID.randomUUID()
         viewModelScope.launch(Dispatchers.IO) {
-            dao.insert(Note(id, name="", content=""))
+            dao.insert(Note(id, name="", content="", lastEdited = now().toEpochMilliseconds()))
         }
     }
 
@@ -54,7 +56,8 @@ class NoteViewModel() : ViewModel() {
                         Note(
                             id = id,
                             name = debouncedName.toString(),
-                            content = debouncedContent.toString()
+                            content = debouncedContent.toString(),
+                            lastEdited = now().toEpochMilliseconds()
                         )
                     )
                 }

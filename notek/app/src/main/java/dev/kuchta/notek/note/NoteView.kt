@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
@@ -28,17 +31,16 @@ import kotlin.uuid.Uuid
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class,
     ExperimentalUuidApi::class
 )
-fun NoteView(noteId: UUID, vm : NoteViewModel = viewModel()) {
+fun NoteView(noteId: UUID, vm : NoteViewModel = viewModel(key = noteId.toString())) {
     LaunchedEffect(noteId) {
         if (noteId == UUID(0,0)) {
             vm.startNote()
         } else {
-
             vm.loadNote(noteId)
         }
     }
 Scaffold { contentPadding ->
-
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState())
             .padding(contentPadding)
@@ -61,7 +63,7 @@ Scaffold { contentPadding ->
         )
         TextField(
             vm.content,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().heightIn(min = screenHeightDp-150.dp),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent,

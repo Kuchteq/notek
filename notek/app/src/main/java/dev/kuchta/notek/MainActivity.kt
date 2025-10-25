@@ -6,6 +6,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
@@ -80,7 +86,6 @@ sealed class NavDest {
 }
 @Composable
 fun NotekNavHost(navStack: TopLevelBackStack<Any>) {
-
         NavDisplay(
             backStack = navStack.backStack,
             onBack = { navStack.removeLast() },
@@ -89,7 +94,28 @@ fun NotekNavHost(navStack: TopLevelBackStack<Any>) {
                     is NavDest.Home -> NavEntry(route) {
                         Home()
                     }
-                    is NavDest.Note -> NavEntry(route) {
+                    is NavDest.Note -> NavEntry(route,
+                        metadata = NavDisplay.transitionSpec {
+                            // Slide new content up, keeping the old content in place underneath
+                            slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = tween(500)
+                            ) togetherWith ExitTransition.KeepUntilTransitionsFinished
+                        } + NavDisplay.popTransitionSpec {
+                            // Slide old content down, revealing the new content in place underneath
+                            EnterTransition.None togetherWith
+                                    slideOutVertically(
+                                        targetOffsetY = { it },
+                                        animationSpec = tween(1000)
+                                    )
+                        } + NavDisplay.predictivePopTransitionSpec {
+                            // Slide old content down, revealing the new content in place underneath
+                            EnterTransition.None togetherWith
+                                    slideOutVertically(
+                                        targetOffsetY = { it },
+                                        animationSpec = tween(1000)
+                                    )
+                        }) {
                         NoteView(noteId = route.noteId)
                     }
                     is NavDest.NoteDetails -> NavEntry(route) {

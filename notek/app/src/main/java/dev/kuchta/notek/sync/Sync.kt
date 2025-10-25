@@ -25,6 +25,11 @@ sealed class SyncRequests {
             }
         }
     }
+    fun serialized(): ByteArray {
+        val bytes = Buffer();
+        this.serialize(bytes)
+        return bytes.readByteArray()
+    }
     companion object {
     }
 }

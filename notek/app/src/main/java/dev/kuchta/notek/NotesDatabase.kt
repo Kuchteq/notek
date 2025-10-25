@@ -16,14 +16,14 @@ data class Note (
     val id: UUID = UUID.randomUUID(),
     val name: String,
     val content: String,
-    val lastSynced: Long = 0,
+    val lastEdited: Long = 0,
     val state: ByteArray = ByteArray(0)
 
 )
 @Dao
 interface NoteDao {
 
-    @Query("SELECT * FROM notes")
+    @Query("SELECT * FROM notes ORDER BY lastEdited DESC")
     fun getAllNotes(): Flow<List<Note>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
