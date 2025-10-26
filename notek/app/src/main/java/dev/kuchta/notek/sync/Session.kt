@@ -1,55 +1,43 @@
 package org.example
-import Doc
 import Pid
+import dev.kuchta.notek.sync.DocOp
 import kotlinx.io.*
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
-import kotlin.uuid.putUuid
+import kotlin.uuid.toKotlinUuid
 
 @OptIn(ExperimentalUuidApi::class)
-sealed class PeerMessage {
+sealed class Session {
     abstract fun serialize(sink: Sink)
 
-    data class Start(val lastSyncTime: ULong, val documentId: UUID) : PeerMessage() {
+    data class Start(val lastSyncTime: ULong, val documentId: UUID) : Session() {
         override fun serialize(sink: Sink) {
             sink.writeUByte(64u)
             sink.writeLongLe(lastSyncTime.toLong())
-            val bb = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
-            bb.putLong(documentId.mostSignificantBits)
-            bb.putLong(documentId.leastSignificantBits)
-            sink.write(bb.array())
+            sink.write(documentId.toKotlinUuid().toByteArray())
         }
     }
 
-    data class Insert(val site: UByte, val pid: Pid, val c: Char) : PeerMessage() {
+    data class Insert(val site: UByte, val pid: Pid, val c: Char) : Session() {
+        override fun serialize(sink: Sink) {
+            sink.writeUByte(65u)
+            sink.writeUByte(site)
+            DocOp.Insert(pid, c).serialize(sink)
+        }
+    }
+
+    data class Delete(val site: UByte, val pid: Pid) : Session() {
         override fun serialize(sink: Sink) {
             sink.writeUByte(66u)
             sink.writeUByte(site)
-            val encoded = c.toString().toByteArray(Charsets.UTF_8)
-            sink.writeUByte(encoded.size.toUByte())
-            sink.write(encoded)
-            sink.writeUByte(pid.depth().toUByte())
-            pid.writeTo(sink)
-        }
-    }
-
-    data class Delete(val site: UByte, val pid: Pid) : PeerMessage() {
-        override fun serialize(sink: Sink) {
-            sink.writeUByte(67u)
-            sink.writeUByte(site)
-            sink.writeUByte(pid.depth().toUByte())
-            pid.writeTo(sink)
+            DocOp.Delete(pid).serialize(sink)
         }
     }
 
     companion object {
-        fun deserialize(source: Source): PeerMessage {
+        fun deserialize(source: Source): Session {
             return when (val tag = source.readUByte().toUInt()) {
                 64u -> {
                     val lastSyncTime = source.readLongLe().toULong()
@@ -60,21 +48,21 @@ sealed class PeerMessage {
                 }
                 65u -> {
                     val site = source.readUByte()
-                    val dataLen = source.readUByte().toInt()
-                    val data = source.readByteArray(dataLen)
-                    val c = data.toString(Charsets.UTF_8).first()
-                    val pidDepth = source.readUByte().toInt()
-                    val pid = Pid.fromSource(source, pidDepth)
-                    Insert(site, pid, c)
+                    val op = DocOp.Insert.deserialize(source)
+                    Insert(site, op.pid, op.ch)
                 }
                 66u -> {
                     val site = source.readUByte()
-                    val pidDepth = source.readUByte().toInt()
-                    val pid = Pid.fromSource(source, pidDepth)
-                    Delete(site, pid)
+                    val op = DocOp.Delete.deserialize(source)
+                    Delete(site, op.pid)
                 }
                 else -> throw IllegalArgumentException("Unknown message tag: $tag")
             }
         }
+    }
+    fun serialized(): ByteArray {
+        val bytes = Buffer();
+        this.serialize(bytes)
+        return bytes.readByteArray()
     }
 }

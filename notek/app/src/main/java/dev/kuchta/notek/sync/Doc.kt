@@ -1,39 +1,58 @@
+import dev.kuchta.notek.sync.DocOp
 import kotlinx.io.*
 import java.io.DataInputStream
 import java.util.TreeMap
 import kotlin.math.max
-import kotlin.times
-import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
 data class Doc(
     val content: TreeMap<Pid, Char>,
-    val site: UByte
 ) {
     companion object {
         fun fromSource(source: Source, n: Int): Doc {
             val content = TreeMap<Pid, Char>() // same semantics as TreeMap
 
             repeat(n) {
-                // Read the UTF-8 character length (1–4 bytes)
                 val dataLen = source.readUByte().toInt()
-
-                // Read up to 4 bytes of UTF-8 data
                 val data = source.readByteArray(dataLen)
                 val char = data.toString(Charsets.UTF_8)[0]
-
-                // Read pid depth and pid itself
                 val pidDepth = source.readUByte().toInt()
                 val pid = Pid.fromSource(source, pidDepth)
-
-                // Insert into map
                 content[pid] = char
             }
 
-            // Return Doc with site hard-coded as 1
-            return Doc(content, 1u)
+            return Doc(content)
         }
 
+        fun fromSource(source: Source): Doc {
+            val content = TreeMap<Pid, Char>()
+
+            while (!source.exhausted()) {
+                val dataLen = source.readUByte().toInt()
+                val data = source.readByteArray(dataLen)
+                val char = data.toString(Charsets.UTF_8)[0]
+                val pidDepth = source.readUByte().toInt()
+                val pid = Pid.fromSource(source, pidDepth)
+                content[pid] = char
+            }
+            return Doc(content)
+        }
+        fun empty(): Doc {
+            var map = TreeMap<Pid, Char>();
+            val beg = Pid.new1d(0u,  0u)
+            val end = Pid.new1d(UInt.MAX_VALUE, 0u)
+
+            map[beg] = '_'
+            map[end] = '_'
+            return Doc(map)
+        }
+        fun fromInsertsAndDeletes(inserts: List<DocOp.Insert>, deletes: List<DocOp.Delete>) : Doc {
+            val d = empty()
+            for (insert in inserts) {
+                d.insert(insert.pid, insert.ch)
+            }
+            return d
+        }
         fun fromReader(reader: DataInputStream, n: Int): Doc {
             val content = TreeMap<Pid, Char>() // same semantics as BTreeMap
 
@@ -57,43 +76,36 @@ data class Doc(
             }
 
             // Return a new Doc (site hard-coded as 1)
-            return Doc(content, 1u)
+            return Doc(content)
         }
-        fun fromString(content: String, site: UByte) : Doc {
+        fun fromString(content: String) : Doc {
+            val d = empty()
             val step = UInt.MAX_VALUE / content.length.toUInt();
-            var map = TreeMap<Pid, Char>();
-            val beg = Pid.new(0u)
-            val end = Pid.new(UInt.MAX_VALUE)
-
-            map[beg] = '_'
-            map[end] = '_'
             for ((i, c) in content.withIndex()) {
-                val v = Pid.new(i.toUInt()*step)
-                map[v] = c
+                val v = Pid.new1d(i.toUInt()*step, 0u)
+                d.insert(v, c)
             }
-            return Doc(map, site)
+            return d
         }
     }
-    fun writeBytes(buf: ByteArrayOutputStream) {
+
+    fun writeTo(sink: Sink) {
         for ((pid, ch) in content) {
-            // 1️⃣ Encode the character into UTF-8 bytes (1–4 bytes)
             val encoded = ch.toString().toByteArray(StandardCharsets.UTF_8)
-
-            // 2️⃣ Write the encoded character length (u8)
-            buf.write(encoded.size)
-
-            // 3️⃣ Write the actual UTF-8 bytes
-            buf.write(encoded)
-
-            // 4️⃣ Write pid depth (u8)
-            buf.write(pid.depth().toInt())
-
-            // 5️⃣ Write the pid vector itself
-            pid.writeBytes(buf)
+            sink.writeByte(encoded.size.toByte())
+            sink.write(encoded)
+            sink.writeByte(pid.depth().toByte())
+            pid.writeTo(sink)
         }
     }
+    fun serialized(): ByteArray {
+        val bytes = Buffer();
+        this.writeTo(bytes)
+        return bytes.readByteArray()
+    }
+
     fun display() : String {
-        return this.content.values.joinToString(separator = "")
+        return this.content.values.drop(1).dropLast(1).joinToString(separator = "")
     }
 
     public fun delete(pid: Pid) {

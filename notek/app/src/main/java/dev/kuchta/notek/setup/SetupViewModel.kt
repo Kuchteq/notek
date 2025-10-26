@@ -42,15 +42,12 @@ class SetupViewModel : ViewModel() {
             // send a message
             val sr = SyncRequests.SyncList(0u)
             send(sr.serialized())
-            println("Sent message")
             // receive a message
             for (frame in incoming) {
-                println("Received one")
                 val buffer = Buffer()
                 buffer.write(frame.readBytes())
                 val resp = SyncResponses.deserialize(buffer)
 
-                println("Response from the server: ${resp}")
                 when (resp) {
                     is SyncResponses.SyncList -> {
                         for (doc in resp.docs) {
@@ -58,13 +55,15 @@ class SetupViewModel : ViewModel() {
                             send(sr.serialized())
                         }
                     }
-                    is SyncResponses.SyncFullDoc -> {
+                    is SyncResponses.SyncDoc -> {
+                        val crdt = Doc.fromInsertsAndDeletes(resp.inserts, resp.deletes)
+                        println(crdt.content.keys.map({p -> p.positions[0].site}))
                         dao.insert(Note (
                             resp.documentId.toJavaUuid(),
-                            "Title from the server",
-                            resp.doc.content.values.toString(),
+                            name = resp.name,
+                            crdt.display(),
                             0,
-                            ByteArray(0) ))
+                            crdt.serialized() ))
                     }
                     else -> {}
                 }

@@ -1,3 +1,5 @@
+import kotlinx.io.Sink
+import kotlinx.io.writeIntLe
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -17,5 +19,12 @@ public class Pos(val ident: UInt, val site: UByte) : Comparable<Pos> {
         buf.write(identBytes)
 
         buf.write(byteArrayOf(site.toByte()))
+    }
+    fun writeTo(sink: Sink) {
+        // Write 4-byte unsigned int in little-endian order
+        sink.writeIntLe(ident.toInt())
+
+        // Write 1-byte unsigned site ID
+        sink.writeByte(site.toByte())
     }
 }

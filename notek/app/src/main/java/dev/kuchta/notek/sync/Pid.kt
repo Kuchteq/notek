@@ -1,3 +1,4 @@
+import kotlinx.io.Sink
 import kotlinx.io.Source
 import kotlinx.io.readUByte
 import kotlinx.io.readUIntLe
@@ -8,7 +9,7 @@ import java.nio.ByteOrder
 
 class Pid(val positions: MutableList<Pos>) : Comparable<Pid> {
     companion object {
-        fun new(ident: UInt) = Pid(mutableListOf(Pos(ident, 1u)))
+        fun new1d(ident: UInt, site: UByte) = Pid(mutableListOf(Pos(ident, site)))
 
         fun empty() = Pid(mutableListOf())
         fun fromReader(reader: DataInputStream, depth: Int): Pid {
@@ -53,6 +54,11 @@ class Pid(val positions: MutableList<Pos>) : Comparable<Pid> {
     fun writeBytes(buf: ByteArrayOutputStream) {
         for ( p in positions ) {
             p.writeBytes(buf)
+        }
+    }
+    fun writeTo(sink: Sink) {
+        for ( p in positions ) {
+            p.writeTo(sink)
         }
     }
     override fun compareTo(other: Pid): Int {
