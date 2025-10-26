@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read};
+use std::io::{BufRead, Cursor, Read};
 
 use algos::{doc::Doc, pid::Pid};
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -25,6 +25,9 @@ pub enum SessionMessage {
         site: u8,
         pid: Pid,
     },
+    ChangeName {
+        name: String
+    },
     NewSession {
         site: u8,
         doc: Doc,
@@ -35,38 +38,39 @@ impl SessionMessage {
     pub fn serialize(&self) -> Vec<u8> {
         match self {
             SessionMessage::Start {
-                document_id,
-                last_sync_time,
-            } => vec![0u8],
+                        document_id,
+                        last_sync_time,
+                    } => vec![0u8],
             SessionMessage::NewSession { site, doc } => {
-                // put header i.e. PeerMessage enum it is
-                let mut buf = vec![1u8];
-                // put site_id
-                buf.push(*site);
-                // put numberofatoms
-                buf.extend((doc.len() as u64).to_le_bytes());
-                doc.write_bytes_tobuf(&mut buf);
-                buf
-            }
+                        // put header i.e. PeerMessage enum it is
+                        let mut buf = vec![1u8];
+                        // put site_id
+                        buf.push(*site);
+                        // put numberofatoms
+                        buf.extend((doc.len() as u64).to_le_bytes());
+                        doc.write_bytes_tobuf(&mut buf);
+                        buf
+                    }
             SessionMessage::Insert { site, pid, c } => {
-                let mut buf = vec![2u8];
-                buf.push(*site);
-                let mut cbuf = [0u8; 4];
-                let encoded = c.encode_utf8(&mut cbuf);
-                // put atom's data length
-                buf.push(encoded.len() as u8);
-                buf.extend(encoded.as_bytes());
-                buf.push(pid.depth() as u8);
-                pid.write_bytes(&mut buf);
-                buf
-            }
+                        let mut buf = vec![2u8];
+                        buf.push(*site);
+                        let mut cbuf = [0u8; 4];
+                        let encoded = c.encode_utf8(&mut cbuf);
+                        // put atom's data length
+                        buf.push(encoded.len() as u8);
+                        buf.extend(encoded.as_bytes());
+                        buf.push(pid.depth() as u8);
+                        pid.write_bytes(&mut buf);
+                        buf
+                    }
             SessionMessage::Delete { site, pid } => {
-                let mut buf = vec![3u8];
-                buf.push(*site);
-                buf.push(pid.depth() as u8);
-                pid.write_bytes(&mut buf);
-                buf
-            }
+                        let mut buf = vec![3u8];
+                        buf.push(*site);
+                        buf.push(pid.depth() as u8);
+                        pid.write_bytes(&mut buf);
+                        buf
+                    }
+            SessionMessage::ChangeName { name } => todo!(),
         }
     }
     pub fn deserialize(buf: &[u8]) -> SessionMessage {
@@ -81,14 +85,6 @@ impl SessionMessage {
                 }
             },
             65u8 => {
-                let site = cur.read_u8().unwrap();
-                let number_of_atoms = cur.read_u64::<LittleEndian>().unwrap() as usize;
-                SessionMessage::NewSession {
-                    site: site,
-                    doc: Doc::from_reader(&mut cur, number_of_atoms),
-                }
-            }
-            66u8 => {
                 let site = cur.read_u8().unwrap();
                 let data_len = cur.read_u8().unwrap() as usize;
                 let mut bytes = [0u8; 4];
@@ -106,13 +102,26 @@ impl SessionMessage {
                     c: data,
                 }
             }
-            67u8 => {
+            66u8 => {
                 let site = cur.read_u8().unwrap();
                 let pid_depth = cur.read_u8().unwrap();
                 let pid = Pid::from_reader(&mut cur, pid_depth as usize);
                 SessionMessage::Delete {
                     site: site,
                     pid: pid,
+                }
+            }
+            67u8 => {
+                let mut document_name = Vec::new();
+                cur.read_until(b'\n', &mut document_name);
+                SessionMessage::ChangeName { name: String::from_utf8(document_name).unwrap() }
+            }
+            68u8 => {
+                let site = cur.read_u8().unwrap();
+                let number_of_atoms = cur.read_u64::<LittleEndian>().unwrap() as usize;
+                SessionMessage::NewSession {
+                    site: site,
+                    doc: Doc::from_reader(&mut cur, number_of_atoms),
                 }
             }
             _ => panic!(),
@@ -143,28 +152,29 @@ impl SessionMember {
     println!("{:#?}", req);
         match req {
             SessionMessage::Start {
-                document_id,
-                last_sync_time,
-            } => {
-                self.document_id = document_id;
-                self.connection_site_id = rand::rng().random_range(0..255);
-                println!("started a sesh");
-            }
+                        document_id,
+                        last_sync_time,
+                    } => {
+                        self.document_id = document_id;
+                        self.connection_site_id = rand::rng().random_range(0..255);
+                        println!("started a sesh");
+                    }
             SessionMessage::Insert { site, pid, c } => {
-                let op = DocOp::Insert(pid, c);
-                state_tx.send(StateCommand::UpdateDoc {
-                    document_id: self.document_id,
-                    op,
-                }).await;
-            }
+                        let op = DocOp::Insert(pid, c);
+                        state_tx.send(StateCommand::UpdateDoc {
+                            document_id: self.document_id,
+                            op,
+                        }).await;
+                    }
             SessionMessage::Delete { site, pid } => {
-                let op = DocOp::Delete(pid);
-                state_tx.send(StateCommand::UpdateDoc {
-                    document_id: self.document_id,
-                    op,
-                }).await;
-            }
+                        let op = DocOp::Delete(pid);
+                        state_tx.send(StateCommand::UpdateDoc {
+                            document_id: self.document_id,
+                            op,
+                        }).await;
+                    }
             SessionMessage::NewSession { site, doc } => todo!(),
+            SessionMessage::ChangeName { name } => todo!(),
         }
         Ok(())
     }

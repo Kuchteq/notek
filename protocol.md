@@ -32,7 +32,7 @@ Requests from the client:
   | u8 pid_depth
   | ⌈ u8  site
   ⎩ ⌊ u32 ident
-- u64 number_of_delete_atoms
+- u64 number_of_deletes
   ⎧ u8 pid_depth
   | ⌈ u8  site
   ⎩ ⌊ u32 ident

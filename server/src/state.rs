@@ -61,11 +61,17 @@ impl State {
                 doc_idx+=1;
             }
         }
+        println!("{:#?}", docs);
         Ok(State { docs: docs, by_time: dt, by_id: di })
     }
 
     pub fn get_doc(&self, document_id: u128) -> &Doc {
         self.docs[self.by_id[&document_id]].get_doc()
+        // self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
+    }
+
+    pub fn get_structure(&self, document_id: u128) -> &DocStructure {
+        &self.docs[self.by_id[&document_id]]
         // self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
     }
 
@@ -78,8 +84,8 @@ impl State {
                     document_id,
                     respond_to,
                 } => {
-                    let doc = self.get_doc(document_id);
-                    let r = SyncResponses::SyncFullDoc { document_id: document_id, doc: doc };
+                    let structure = self.get_structure(document_id);
+                    let r = SyncResponses::SyncDoc { document_id: document_id, name: structure.name.clone(), doc: structure.get_doc() };
                     let mut buf = Vec::new();
                     r.serialize_into(&mut buf);
                     let _ = respond_to.send(buf);

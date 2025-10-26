@@ -39,12 +39,9 @@ impl SyncRequests {
 #[derive(Debug)]
 pub enum SyncResponses<'a> {
     SyncList(Vec<DocSyncInfo>),
-    SyncOpDoc {
+    SyncDoc {
         document_id: u128,
-        updates: Vec<DocOp>,
-    },
-    SyncFullDoc {
-        document_id: u128,
+        name: String,
         doc: &'a Doc,
     },
 }
@@ -68,7 +65,7 @@ impl SyncResponses<'_> {
     pub fn serialize_into<W: Write>(&self, mut w: W) -> Result<()> {
         match self {
             SyncResponses::SyncList(doc_sync_infos) => {
-                w.write_all(&[2u8])?;
+                w.write_all(&[32u8])?;
                 w.write_all(&(doc_sync_infos.len() as u64).to_le_bytes())?;
                 for doc in doc_sync_infos {
                     w.write_all(&doc.last_mod_time.to_le_bytes())?;
@@ -76,58 +73,23 @@ impl SyncResponses<'_> {
                 }
 
             },
-            SyncResponses::SyncOpDoc {
+            SyncResponses::SyncDoc {
                 document_id,
-                updates,
-            } => {
-                w.write_all(&[3u8])?;
-                w.write_all(&document_id.to_le_bytes())?;
-                w.write_all(&(updates.len() as u64).to_le_bytes())?;
-
-                for op in updates {
-                    op.serialize_into(&mut w)?;
-                }
-            }
-            SyncResponses::SyncFullDoc {
-                document_id,
+                name,
                 doc,
             } => {
-                w.write_all(&[4u8])?;
+                w.write_all(&[33u8])?;
                 w.write_all(&document_id.to_le_bytes())?;
+                w.write_all(name.as_bytes());
+                w.write_all(&[b'\n']);
+                // Number of insert atoms:
                 w.write_all(&(doc.len() as u64).to_le_bytes())?;
                 doc.write_bytes(&mut w)?;
+                // Number of delete atoms:
+                w.write_all(&(0 as u64).to_le_bytes())?;
             },
         }
         Ok(())
-    }
-    pub fn serialize(&self) -> Vec<u8> {
-        match self {
-            SyncResponses::SyncList(doc_sync_infos) => {
-                let mut buf = vec![2u8];
-                buf.extend((doc_sync_infos.len() as u64).to_le_bytes());
-                for doc in doc_sync_infos {
-                    buf.extend(doc.last_mod_time.to_le_bytes());
-                    buf.extend(doc.document_id.to_le_bytes());
-                }
-                buf
-            }
-            SyncResponses::SyncOpDoc {
-                document_id,
-                updates,
-            } => {
-                let mut buf = vec![3u8];
-                buf.extend(document_id.to_le_bytes());
-                buf.extend(updates.len().to_le_bytes());
-                for op in updates {
-                    op.serialize_into(&mut buf);
-                }
-                buf
-            }
-            SyncResponses::SyncFullDoc {
-                document_id,
-                doc,
-            } => todo!(),
-        }
     }
 }
 
