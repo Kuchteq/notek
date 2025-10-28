@@ -19,6 +19,7 @@ import io.ktor.http.HttpMethod
 import io.ktor.websocket.send
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -27,12 +28,14 @@ import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import org.example.Session
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.time.Clock.System.now
 import kotlin.time.ExperimentalTime
 import kotlin.uuid.ExperimentalUuidApi
 
 @OptIn(UnsafeIoApi::class)
 private fun ByteArray.asSource(): Source = Buffer().apply { UnsafeBufferOperations.moveToTail(this, this@asSource) }
+
 @OptIn(ExperimentalUuidApi::class, FlowPreview::class, ExperimentalTime::class)
 class NoteViewModel() : ViewModel() {
     private val db = g.db
@@ -40,6 +43,8 @@ class NoteViewModel() : ViewModel() {
 
     private var id: UUID = UUID(0,0)
     private var crdt: Doc = Doc.empty();
+    private var previousCursorPid = Pid.new1d(0u,0u)
+    private var previousCursorInt = 0
     val name = TextFieldState("")
     val content = TextFieldState("")
     val sendQueue = SendQueue()
@@ -48,9 +53,20 @@ class NoteViewModel() : ViewModel() {
         install(WebSockets)
     }
     fun localToCrdtInsert(p: Int, ch: Char) {
-        val pid = Pid.new1d(p.toUInt()+1u, 1u)
-        crdt.insert(pid, ch)
         viewModelScope.launch(Dispatchers.IO) {
+            val steps = abs(p - previousCursorInt)
+            if (p > previousCursorInt) {
+                val rightOf = crdt.content.tailMap(previousCursorPid, false).entries.iterator()
+                var entry: MutableMap.MutableEntry<Pid?, Char?>? = null
+                repeat(steps) {
+                    if (!rightOf.hasNext()) return@repeat
+                    entry = rightOf.next()
+                }
+            }
+
+//            crdt.content.descendingMap().tailMap(previousCursor.second)
+            val pid = Pid.new1d(p.toUInt()+1u, 1u)
+            crdt.insert(pid, ch)
             sendQueue.enqueue(pid, ch)
         }
     }
@@ -99,6 +115,14 @@ class NoteViewModel() : ViewModel() {
 //                content.setTextAndPlaceCursorAtEnd(note?.content ?: "")
 //            }
 
+        }
+    }
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            sendQueue.updates.debounce(1000L).collect({
+                dao.insert(Note(id, name.text.toString(), content.text.toString(), now().toEpochMilliseconds(), crdt.serialized()))
+            })
         }
     }
 
