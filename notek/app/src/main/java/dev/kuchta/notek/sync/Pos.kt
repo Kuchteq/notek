@@ -27,4 +27,6 @@ public class Pos(val ident: UInt, val site: UByte) : Comparable<Pos> {
         // Write 1-byte unsigned site ID
         sink.writeByte(site.toByte())
     }
+
+    override fun toString(): String = "($ident@$site)"
 }

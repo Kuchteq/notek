@@ -45,6 +45,8 @@ class Pid(val positions: MutableList<Pos>) : Comparable<Pid> {
             return Pid(positions)
         }
     }
+    override fun toString(): String =
+        positions.joinToString(separator = ".", prefix = "[", postfix = "]") { it.toString() }
     fun depth() : Int{
         return positions.size
     }

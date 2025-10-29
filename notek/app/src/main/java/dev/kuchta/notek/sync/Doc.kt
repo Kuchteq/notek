@@ -134,12 +134,12 @@ data class Doc(
 }
 
 public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UByte) : Pid {
-    var p = Pid.empty()
+    val p = Pid.empty()
 
     val max_depth = max(lp.positions.size, rp.positions.size)
     for (i in 0 until max_depth) {
         val l : Pos = lp.positions.getOrElse(i) { Pos(0u, 0u) }
-        val r : Pos = lp.positions.getOrElse(i) { Pos(UInt.MAX_VALUE, 0u) }
+        val r : Pos = rp.positions.getOrElse(i) { Pos(UInt.MAX_VALUE, 0u) }
 
         if (l == r) {
             p.push(l);
@@ -152,13 +152,15 @@ public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UByte) : Pid {
         }
         val d = r.ident - l.ident
         if ( d > 1u) {
-            val new_ident = (l.ident + 1u..r.ident).random();
+//            val new_ident = (l.ident + 1u..r.ident).random();
+            val new_ident = (l.ident + 1u + r.ident)/2u;
             p.push(Pos(new_ident, site_id))
             return p
         } else {
             p.push(l)
         }
     }
-    p.push(Pos((0u..UInt.MAX_VALUE).random(),site_id))
+//    p.push(Pos((0u..UInt.MAX_VALUE).random(),site_id))
+    p.push(Pos((0u + UInt.MAX_VALUE) / 2u,site_id))
     return p
 }

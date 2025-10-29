@@ -2,6 +2,8 @@ package dev.kuchta.notek.note
 
 import Doc
 import Pid
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.snapshotFlow
@@ -11,6 +13,7 @@ import dev.kuchta.notek.Note
 import dev.kuchta.notek.g
 import kotlinx.io.Source
 import dev.kuchta.notek.sync.SendQueue
+import generate_between_pids
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
@@ -27,6 +30,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import org.example.Session
+import java.util.TreeMap
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.time.Clock.System.now
@@ -36,6 +40,29 @@ import kotlin.uuid.ExperimentalUuidApi
 @OptIn(UnsafeIoApi::class)
 private fun ByteArray.asSource(): Source = Buffer().apply { UnsafeBufferOperations.moveToTail(this, this@asSource) }
 
+fun TreeMap<Pid, Char>.neighborsFrom(
+    fromPid: Pid,
+    steps: Int,
+    forward: Boolean
+): Pair<Pid?, Pid?> {
+    val iterator = if (forward)
+        tailMap(fromPid, false).entries.iterator()
+    else
+        headMap(fromPid, false).descendingMap().entries.iterator()
+
+    var target: MutableMap.MutableEntry<Pid, Char?>? = null
+    repeat(steps) { if (iterator.hasNext()) target = iterator.next() }
+
+    return if (forward) {
+        val left = target?.key ?: fromPid
+        val right = higherKey(left)
+        left to right
+    } else {
+        val right = target?.key ?: fromPid
+        val left = lowerKey(right)
+        left to right
+    }
+}
 @OptIn(ExperimentalUuidApi::class, FlowPreview::class, ExperimentalTime::class)
 class NoteViewModel() : ViewModel() {
     private val db = g.db
@@ -54,20 +81,31 @@ class NoteViewModel() : ViewModel() {
     }
     fun localToCrdtInsert(p: Int, ch: Char) {
         viewModelScope.launch(Dispatchers.IO) {
-            val steps = abs(p - previousCursorInt)
-            if (p > previousCursorInt) {
-                val rightOf = crdt.content.tailMap(previousCursorPid, false).entries.iterator()
-                var entry: MutableMap.MutableEntry<Pid?, Char?>? = null
-                repeat(steps) {
-                    if (!rightOf.hasNext()) return@repeat
-                    entry = rightOf.next()
-                }
-            }
+            val content = crdt.content
+            val cursorOld = previousCursorInt
+            val cursorNew = p
+            val steps = abs(cursorNew - cursorOld)
+            val movingRight = cursorNew > cursorOld
 
-//            crdt.content.descendingMap().tailMap(previousCursor.second)
-            val pid = Pid.new1d(p.toUInt()+1u, 1u)
+            val (leftPid, rightPid) = content.neighborsFrom(
+                fromPid = previousCursorPid,
+                steps = steps,
+                forward = movingRight
+            )
+
+            println("Insert between ${leftPid} and ${rightPid}")
+
+            // Handle boundaries: allow insert at start or end
+            val pid = when {
+                leftPid != null && rightPid != null ->
+                    generate_between_pids(leftPid, rightPid, 3u)
+                else -> return@launch // should not happen (empty CRDT)
+            }
+            println("new pid: $pid")
             crdt.insert(pid, ch)
             sendQueue.enqueue(pid, ch)
+            previousCursorPid = pid
+            previousCursorInt = p
         }
     }
 
