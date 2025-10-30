@@ -81,31 +81,12 @@ class NoteViewModel() : ViewModel() {
     }
     fun localToCrdtInsert(p: Int, ch: Char) {
         viewModelScope.launch(Dispatchers.IO) {
-            val content = crdt.content
-            val cursorOld = previousCursorInt
-            val cursorNew = p
-            val steps = abs(cursorNew - cursorOld)
-            val movingRight = cursorNew > cursorOld
-
-            val (leftPid, rightPid) = content.neighborsFrom(
-                fromPid = previousCursorPid,
-                steps = steps,
-                forward = movingRight
-            )
-
-            println("Insert between ${leftPid} and ${rightPid}")
-
-            // Handle boundaries: allow insert at start or end
-            val pid = when {
-                leftPid != null && rightPid != null ->
-                    generate_between_pids(leftPid, rightPid, 3u)
-                else -> return@launch // should not happen (empty CRDT)
-            }
+            val pid = crdt.insertAtPhysicalOrder(p, ch)
             println("new pid: $pid")
-            crdt.insert(pid, ch)
-            sendQueue.enqueue(pid, ch)
-            previousCursorPid = pid
-            previousCursorInt = p
+
+            pid?.let{
+                sendQueue.enqueue(pid, ch)
+            }
         }
     }
 

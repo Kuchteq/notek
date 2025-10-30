@@ -1,3 +1,4 @@
+import dev.kuchta.notek.sync.BalancedOrderStatisticTreeMap
 import dev.kuchta.notek.sync.DocOp
 import kotlinx.io.*
 import java.io.DataInputStream
@@ -6,11 +7,11 @@ import kotlin.math.max
 import java.nio.charset.StandardCharsets
 
 data class Doc(
-    val content: TreeMap<Pid, Char>,
+    val content: BalancedOrderStatisticTreeMap<Pid, Char>,
 ) {
     companion object {
         fun fromSource(source: Source, n: Int): Doc {
-            val content = TreeMap<Pid, Char>() // same semantics as TreeMap
+            val content = BalancedOrderStatisticTreeMap<Pid, Char>() // same semantics as TreeMap
 
             repeat(n) {
                 val dataLen = source.readUByte().toInt()
@@ -25,7 +26,7 @@ data class Doc(
         }
 
         fun fromSource(source: Source): Doc {
-            val content = TreeMap<Pid, Char>()
+            val content = BalancedOrderStatisticTreeMap<Pid, Char>()
 
             while (!source.exhausted()) {
                 val dataLen = source.readUByte().toInt()
@@ -38,7 +39,7 @@ data class Doc(
             return Doc(content)
         }
         fun empty(): Doc {
-            var map = TreeMap<Pid, Char>();
+            var map = BalancedOrderStatisticTreeMap<Pid, Char>();
             val beg = Pid.new1d(0u,  0u)
             val end = Pid.new1d(UInt.MAX_VALUE, 0u)
 
@@ -54,7 +55,7 @@ data class Doc(
             return d
         }
         fun fromReader(reader: DataInputStream, n: Int): Doc {
-            val content = TreeMap<Pid, Char>() // same semantics as BTreeMap
+            val content = BalancedOrderStatisticTreeMap<Pid, Char>() // same semantics as BTreeMap
 
             repeat(n) {
                 // Read the character length (1–4 bytes for UTF-8)
@@ -88,7 +89,16 @@ data class Doc(
             return d
         }
     }
-
+    fun insertAtPhysicalOrder(p: Int, ch: Char): Pid? {
+        val (left, right) = this.content.selectPair(p)
+        println("left: $left, right: $right")
+        if (left != null && right != null) {
+            val pid = generate_between_pids(left.first,right.first, 2u)
+            insert(pid, ch)
+            return pid
+        }
+        return null
+    }
     fun writeTo(sink: Sink) {
         for ((pid, ch) in content) {
             val encoded = ch.toString().toByteArray(StandardCharsets.UTF_8)
@@ -114,18 +124,18 @@ data class Doc(
     public fun insert(pid: Pid, c: Char) {
         this.content[pid] = c
     }
-    public fun insert_left(pid: Pid, c: Char, siteId: UByte) {
-        val new = generate_between_pids(pid, right(pid), siteId)
-        this.content[new] = c;
-    }
-
-    public fun right(pid: Pid) : Pid {
-        return this.content.higherKey(pid)
-    }
-
-    public fun left(pid: Pid) : Pid {
-       return this.content.lowerKey(pid)
-    }
+//    public fun insert_left(pid: Pid, c: Char, siteId: UByte) {
+//        val new = generate_between_pids(pid, right(pid), siteId)
+//        this.content[new] = c;
+//    }
+//
+//    public fun right(pid: Pid) : Pid {
+//        return this.content.higherKey(pid)
+//    }
+//
+//    public fun left(pid: Pid) : Pid {
+//       return this.content.lowerKey(pid)
+//    }
 
     public fun len() : Int {
         return this.content.size

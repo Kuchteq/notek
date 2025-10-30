@@ -57,7 +57,7 @@ class SetupViewModel : ViewModel() {
                     }
                     is SyncResponses.SyncDoc -> {
                         val crdt = Doc.fromInsertsAndDeletes(resp.inserts, resp.deletes)
-                        println(crdt.content.keys.map({p -> p.positions[0].site}))
+                        println(crdt.content)
                         dao.insert(Note (
                             resp.documentId.toJavaUuid(),
                             name = resp.name,
