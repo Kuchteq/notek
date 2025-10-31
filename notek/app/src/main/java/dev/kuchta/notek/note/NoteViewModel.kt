@@ -70,8 +70,6 @@ class NoteViewModel() : ViewModel() {
 
     private var id: UUID = UUID(0,0)
     private var crdt: Doc = Doc.empty();
-    private var previousCursorPid = Pid.new1d(0u,0u)
-    private var previousCursorInt = 0
     val name = TextFieldState("")
     val content = TextFieldState("")
     val sendQueue = SendQueue()
@@ -91,8 +89,7 @@ class NoteViewModel() : ViewModel() {
     }
 
     fun localToCrdtDelete(p: Int) {
-        val pid = Pid.new1d(p.toUInt()+1u, 1u)
-        crdt.delete(pid)
+        val pid = crdt.deleteAtPhysicalOrder(p)
         viewModelScope.launch(Dispatchers.IO) {
             sendQueue.enqueue(pid, null)
         }

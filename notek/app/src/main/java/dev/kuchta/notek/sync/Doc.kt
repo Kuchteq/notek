@@ -99,6 +99,12 @@ data class Doc(
         }
         return null
     }
+    fun deleteAtPhysicalOrder(p: Int): Pid {
+        val (pid, _) = this.content.selectEntry(p)
+        delete(pid)
+        return pid
+    }
+
     fun writeTo(sink: Sink) {
         for ((pid, ch) in content) {
             val encoded = ch.toString().toByteArray(StandardCharsets.UTF_8)
