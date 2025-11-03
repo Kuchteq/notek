@@ -91,15 +91,15 @@ data class Doc(
     }
     fun insertAtPhysicalOrder(p: Int, ch: Char): Pid? {
         val (left, right) = this.content.selectPair(p)
-        println("left: $left, right: $right")
         if (left != null && right != null) {
-            val pid = generate_between_pids(left.first,right.first, 2u)
+            val pid = generate_between_pids(left.first,right.first, 0u)
             insert(pid, ch)
             return pid
         }
         return null
     }
     fun deleteAtPhysicalOrder(p: Int): Pid {
+        println("deleting $p")
         val (pid, _) = this.content.selectEntry(p)
         delete(pid)
         return pid
@@ -156,7 +156,6 @@ public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UByte) : Pid {
     for (i in 0 until max_depth) {
         val l : Pos = lp.positions.getOrElse(i) { Pos(0u, 0u) }
         val r : Pos = rp.positions.getOrElse(i) { Pos(UInt.MAX_VALUE, 0u) }
-
         if (l == r) {
             p.push(l);
             continue;
@@ -169,8 +168,8 @@ public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UByte) : Pid {
         val d = r.ident - l.ident
         if ( d > 1u) {
 //            val new_ident = (l.ident + 1u..r.ident).random();
-            val new_ident = (l.ident + 1u + r.ident)/2u;
-            p.push(Pos(new_ident, site_id))
+            val new_ident = (l.ident.toULong() + 1u + r.ident.toULong())/2u;
+            p.push(Pos(new_ident.toUInt(), site_id))
             return p
         } else {
             p.push(l)

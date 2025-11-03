@@ -25,6 +25,9 @@ tasks.jar {
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+tasks.test {
+    useJUnitPlatform()
+}
 dependencies {
     // This dependency is used by the application.
     implementation(libs.guava)
@@ -32,6 +35,9 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:2.3.4")
     implementation("io.ktor:ktor-client-websockets:2.3.4")
     implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.8.0")
+    testImplementation(kotlin("test"))          // Kotlin test helpers
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.0")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.0")
 }
 
 testing {
