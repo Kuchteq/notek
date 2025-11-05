@@ -1,33 +1,18 @@
-use algos::doc::Doc;
-use algos::msg::PeerMessage;
-use algos::pid::Pid;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow};
 use futures::stream::SplitSink;
-use rand::Rng;
-use std::{fs, sync::Arc};
-use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::Bytes;
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
-use crate::serializer::Serializer;
-use crate::session::{SessionMember, SessionMessage};
+use crate::session::{SessionMember};
 use crate::state::{State, StateCommand};
-use crate::sync::{DocSyncInfo, SyncRequests, SyncResponses};
-mod serializer;
+use crate::sync::{SyncRequests};
 mod session;
 mod state;
 mod sync;
-
-enum DocCommand {
-    Insert(u8, Pid, char),
-    Delete(u8, Pid),
-    GetSnapshot(oneshot::Sender<Arc<Doc>>),
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

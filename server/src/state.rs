@@ -3,7 +3,6 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, BufWriter, Write},
     path::Path,
-    rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
