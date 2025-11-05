@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(100); // shared channel to state manager
 
     tokio::spawn(async {
-        let mut state = State::init("sample").unwrap();
+        let mut state = State::init("./").unwrap();
         state.run_state_manager(rx).await;
     });
 

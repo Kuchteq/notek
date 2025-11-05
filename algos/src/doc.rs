@@ -14,7 +14,7 @@ pub struct Doc {
 }
 
 impl Doc {
-    pub fn new(content: String) -> Doc {
+    pub fn new(content: &str) -> Doc {
         let beg = (Pid(vec![Pos { ident: 0, site: 0 }]), '_');
         let end = (
             Pid(vec![Pos {

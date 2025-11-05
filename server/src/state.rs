@@ -1,5 +1,10 @@
 use std::{
-    collections::{BTreeMap, HashMap}, fs::{self, File}, io::{BufReader, BufWriter, Write}, path::Path, rc::Rc, time::{SystemTime, UNIX_EPOCH}
+    collections::{BTreeMap, HashMap},
+    fs::{self, File, OpenOptions},
+    io::{BufReader, BufWriter, Write},
+    path::Path,
+    rc::Rc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use algos::doc::Doc;
@@ -33,14 +38,19 @@ pub enum StateCommand {
         document_id: u128,
         op: DocOp,
     },
+    UpsertDoc {
+        document_id: u128,
+    },
 }
 
 impl State {
     pub fn init(dir: &str) -> Result<Self> {
-        let mut docs = Vec::new();
-        let mut doc_idx = 0;
-        let mut dt = BTreeMap::new();
-        let mut di = HashMap::new();
+        let mut s = State {
+            docs: Vec::new(),
+            by_time: BTreeMap::new(),
+            by_id: HashMap::new(),
+        };
+
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -51,18 +61,21 @@ impl State {
                     .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
                     .to_string();
 
-                let mut s = DocStructure::init_from_filepath(name)?;
-                di.insert(s.id, doc_idx);
-                if dt.contains_key(&s.last_modified) {
-                    s.last_modified += 1;
-                }
-                dt.insert(s.last_modified, doc_idx);
-                docs.push(s);
-                doc_idx+=1;
+                s.add_doc(name, None)?;
             }
         }
-        println!("{:#?}", docs);
-        Ok(State { docs: docs, by_time: dt, by_id: di })
+        Ok(s)
+    }
+    pub fn add_doc(&mut self, name: String, upsertid: Option<u128>) -> Result<()> {
+        let mut s = DocStructure::load_or_create(&name, upsertid)?;
+        let idx = self.docs.len();
+        self.by_id.insert(s.id, idx);
+        if self.by_time.contains_key(&s.last_modified) {
+            s.last_modified += 1;
+        }
+        self.by_time.insert(s.last_modified, idx);
+        self.docs.push(s);
+        Ok(())
     }
 
     pub fn get_doc(&self, document_id: u128) -> &Doc {
@@ -77,7 +90,6 @@ impl State {
 
     pub async fn run_state_manager(mut self, mut rx: mpsc::Receiver<StateCommand>) {
         while let Some(cmd) = rx.recv().await {
-
             println!("the cmd {:#?}", cmd);
             match cmd {
                 StateCommand::GetSyncFullDoc {
@@ -85,12 +97,19 @@ impl State {
                     respond_to,
                 } => {
                     let structure = self.get_structure(document_id);
-                    let r = SyncResponses::SyncDoc { document_id: document_id, name: structure.name.clone(), doc: structure.get_doc() };
+                    let r = SyncResponses::SyncDoc {
+                        document_id: document_id,
+                        name: structure.name.clone(),
+                        doc: structure.get_doc(),
+                    };
                     let mut buf = Vec::new();
                     r.serialize_into(&mut buf);
                     let _ = respond_to.send(buf);
                 }
-                StateCommand::GetSyncList { last_sync_time, respond_to } => {
+                StateCommand::GetSyncList {
+                    last_sync_time,
+                    respond_to,
+                } => {
                     let docs = self
                         .by_time
                         .iter()
@@ -108,7 +127,13 @@ impl State {
                     ds.apply(op);
                     println!("{:#?}", ds)
                 }
-                
+                StateCommand::UpsertDoc { document_id } => {
+                    if let None = self.by_id.get(&document_id) {
+                        let filename = format!("{}-unnamed.md", document_id);
+                        OpenOptions::new().create(true).write(true).open(&filename);
+                        self.add_doc(filename, Some(document_id));
+                    }
+                }
             }
         }
     }
@@ -150,53 +175,63 @@ impl DocStructure {
     fn apply(&mut self, op: DocOp) {
         match &mut self.state {
             DocState::Missing => {} // TODO self.load_state().unwrap(),
-            DocState::Cached(doc) => {
-                match op {
-                    DocOp::Insert(pid, c) => doc.insert(pid, c),
-                    DocOp::Delete(pid) => doc.delete(&pid),
-                }
-                
-            }
+            DocState::Cached(doc) => match op {
+                DocOp::Insert(pid, c) => doc.insert(pid, c),
+                DocOp::Delete(pid) => doc.delete(&pid),
+            },
         }
     }
-    fn init_from_filepath(name: String) -> Result<DocStructure> {
-        let structure_path = &format!("{}.structure", name);
-        let structure_path = Path::new(structure_path);
+    fn create_new(structure_path: &Path, doc_id: u128) -> Result<Self> {
+        let file = File::create(structure_path)?;
+        let mut writer = BufWriter::new(file);
+
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_millis() as u64;
+
+        writer.write_all(&doc_id.to_le_bytes())?;
+        writer.write_all(&timestamp_ms.to_le_bytes())?;
+
+        let doc = Doc::new("");
+        doc.write_bytes(&mut writer)?;
+        writer.flush()?;
+
+        Ok(DocStructure {
+            id: doc_id,
+            name: structure_path
+                .to_str()
+                .unwrap_or_default()
+                .to_string(),
+            last_modified: timestamp_ms,
+            state: DocState::Cached(doc),
+        })
+    }
+
+    fn read_existing(structure_path: &Path, name: String) -> Result<Self> {
+        let file = File::open(structure_path)?;
+        let mut reader = BufReader::new(file);
+
+        let id = reader.read_u128::<LittleEndian>()?;
+        let last_modified = reader.read_u64::<LittleEndian>()?;
+        let doc = Doc::from_reader_eof(&mut reader)?;
+
+        Ok(DocStructure {
+            id,
+            name,
+            last_modified,
+            state: DocState::Cached(doc),
+        })
+    }
+
+    fn load_or_create(name: &str, upsertid: Option<u128>) -> Result<Self> {
+        let structure_path_str = format!("{}.structure", name);
+        let structure_path = Path::new(&structure_path_str);
 
         if structure_path.exists() {
-            let file = File::open(structure_path)?;
-            let mut reader = BufReader::new(file);
-            let id = reader.read_u128::<LittleEndian>()?;
-            let last_modified = reader.read_u64::<LittleEndian>()?;
-            let doc = Doc::from_reader_eof(&mut reader)?;
-
-            return Ok(DocStructure {
-                id,
-                name,
-                last_modified,
-                state: DocState::Cached(doc),
-            });
+            Self::read_existing(structure_path, name.to_string())
         } else {
-            let f = File::create(structure_path)?;
-            let mut writer = BufWriter::new(f);
-
-            let id: u128 = Uuid::new_v4().as_u128();
-            let timestamp_ms: u64 =
-                SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
-
-            writer.write_all(&id.to_le_bytes())?;
-            writer.write_all(&timestamp_ms.to_le_bytes())?;
-
-            let doc = Doc::new(fs::read_to_string(&name)?);
-            doc.write_bytes(&mut writer)?;
-            writer.flush()?;
-
-            return Ok(DocStructure {
-                id,
-                name,
-                last_modified: timestamp_ms,
-                state: DocState::Cached(doc),
-            });
+            let id = upsertid.unwrap_or(Uuid::new_v4().as_u128());
+            Self::create_new(structure_path, id)
         }
     }
 }

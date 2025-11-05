@@ -144,7 +144,9 @@ class NoteViewModel() : ViewModel() {
     fun startNote() {
         id = UUID.randomUUID()
         viewModelScope.launch(Dispatchers.IO) {
-            dao.insert(Note(id, name="", content="", lastEdited = now().toEpochMilliseconds()))
+            dao.insert(Note(id, name="", content="",
+                lastEdited = now().toEpochMilliseconds(), crdt.serialized()))
+            loadNote(id)
         }
     }
 

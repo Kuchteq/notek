@@ -157,6 +157,9 @@ impl SessionMember {
                     } => {
                         self.document_id = document_id;
                         self.connection_site_id = rand::rng().random_range(0..255);
+                        state_tx.send(StateCommand::UpsertDoc {
+                            document_id: self.document_id,
+                        }).await;
                         println!("started a sesh");
                     }
             SessionMessage::Insert { site, pid, c } => {
