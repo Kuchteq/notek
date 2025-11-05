@@ -78,9 +78,8 @@ class NoteViewModel() : ViewModel() {
         install(WebSockets)
     }
     fun localToCrdtInsert(p: Int, ch: Char) {
+        val pid = crdt.insertAtPhysicalOrder(p+1, ch)
         viewModelScope.launch(Dispatchers.IO) {
-            val pid = crdt.insertAtPhysicalOrder(p, ch)
-            println("new pid: $pid")
 
             pid?.let{
                 sendQueue.enqueue(pid, ch)
@@ -89,7 +88,7 @@ class NoteViewModel() : ViewModel() {
     }
 
     fun localToCrdtDelete(p: Int) {
-        val pid = crdt.deleteAtPhysicalOrder(p)
+        val pid = crdt.deleteAtPhysicalOrder(p+1)
         viewModelScope.launch(Dispatchers.IO) {
             sendQueue.enqueue(pid, null)
         }

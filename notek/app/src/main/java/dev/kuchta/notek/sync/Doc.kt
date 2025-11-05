@@ -1,4 +1,3 @@
-import dev.kuchta.notek.sync.BalancedOrderStatisticTreeMap
 import dev.kuchta.notek.sync.DocOp
 import kotlinx.io.*
 import java.io.DataInputStream
@@ -7,11 +6,11 @@ import kotlin.math.max
 import java.nio.charset.StandardCharsets
 
 data class Doc(
-    val content: BalancedOrderStatisticTreeMap<Pid, Char>,
+    val content: TreeMap<Pid, Char>,
 ) {
     companion object {
         fun fromSource(source: Source, n: Int): Doc {
-            val content = BalancedOrderStatisticTreeMap<Pid, Char>() // same semantics as TreeMap
+            val content = TreeMap<Pid, Char>() // same semantics as TreeMap
 
             repeat(n) {
                 val dataLen = source.readUByte().toInt()
@@ -26,7 +25,7 @@ data class Doc(
         }
 
         fun fromSource(source: Source): Doc {
-            val content = BalancedOrderStatisticTreeMap<Pid, Char>()
+            val content = TreeMap<Pid, Char>()
 
             while (!source.exhausted()) {
                 val dataLen = source.readUByte().toInt()
@@ -39,7 +38,7 @@ data class Doc(
             return Doc(content)
         }
         fun empty(): Doc {
-            var map = BalancedOrderStatisticTreeMap<Pid, Char>();
+            var map = TreeMap<Pid, Char>();
             val beg = Pid.new1d(0u,  0u)
             val end = Pid.new1d(UInt.MAX_VALUE, 0u)
 
@@ -55,7 +54,7 @@ data class Doc(
             return d
         }
         fun fromReader(reader: DataInputStream, n: Int): Doc {
-            val content = BalancedOrderStatisticTreeMap<Pid, Char>() // same semantics as BTreeMap
+            val content = TreeMap<Pid, Char>() // same semantics as BTreeMap
 
             repeat(n) {
                 // Read the character length (1–4 bytes for UTF-8)
@@ -91,8 +90,9 @@ data class Doc(
     }
     fun insertAtPhysicalOrder(p: Int, ch: Char): Pid? {
         val (left, right) = this.content.selectPair(p)
+        println("left $left right $right")
         if (left != null && right != null) {
-            val pid = generate_between_pids(left.first,right.first, 0u)
+            val pid = generate_between_pids(left,right, 0u)
             insert(pid, ch)
             return pid
         }
@@ -100,7 +100,7 @@ data class Doc(
     }
     fun deleteAtPhysicalOrder(p: Int): Pid {
         println("deleting $p")
-        val (pid, _) = this.content.selectEntry(p)
+        val pid = this.content.selectEntry(p)
         delete(pid)
         return pid
     }
@@ -147,6 +147,22 @@ data class Doc(
         return this.content.size
     }
 
+}
+
+private fun TreeMap<Pid, Char>.selectPair(p: Int): Pair<Pid, Pid> {
+    val k = keys.iterator()
+    repeat (p-1) {
+        k.next()
+    }
+    return Pair(k.next(), k.next())
+}
+
+private fun TreeMap<Pid, Char>.selectEntry(p: Int): Pid {
+    val k = keys.iterator()
+    repeat (p-1) {
+        k.next()
+    }
+    return k.next()
 }
 
 public fun generate_between_pids(lp: Pid, rp: Pid, site_id: UByte) : Pid {

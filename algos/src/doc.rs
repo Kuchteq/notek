@@ -27,6 +27,9 @@ impl Doc {
         let mut d = Doc {
             content: BTreeMap::from([beg.clone(), end.clone()]),
         };
+        if content.is_empty() {
+            return d
+        }
         let step = (u32::MAX as usize) / content.len();
         for (i, c) in content.chars().enumerate() {
             d.content.insert(

@@ -96,12 +96,11 @@ Scaffold { contentPadding ->
                     }
                 }
 
-                println("inserted: $insertedChars, deleted: $deletedSpaces")
+                for (x in deletedSpaces.asReversed()) {
+                    vm.localToCrdtDelete(x+1)
+                }
                 for (x in insertedChars) {
                     vm.localToCrdtInsert(x.first, x.second)
-                }
-                for (x in deletedSpaces) {
-                    vm.localToCrdtDelete(x+1)
                 }
             },
             colors = TextFieldDefaults.colors(
