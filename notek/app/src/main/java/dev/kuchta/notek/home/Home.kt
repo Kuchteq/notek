@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
@@ -36,10 +37,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.toString
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +55,7 @@ import dev.kuchta.notek.NavDest
 import dev.kuchta.notek.g
 import dev.kuchta.notek.note.HomeViewModel
 import dev.kuchta.notek.setup.SetupViewModel
+import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.time.ExperimentalTime
@@ -155,7 +159,16 @@ fun NoteCard(note: NoteOverview, onClick: () -> Unit) {
             SwipeToDismissBoxValue.Settled,
             SwipeToDismissBoxDefaults.positionalThreshold
         )
+    val scope = rememberCoroutineScope()
 
+    LaunchedEffect(swipeToDismissBoxState.currentValue) {
+        if (swipeToDismissBoxState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+            // Optionally reset after deletion animation
+            scope.launch {
+                swipeToDismissBoxState.snapTo(SwipeToDismissBoxValue.Settled)
+            }
+        }
+    }
     SwipeToDismissBox(
         state = swipeToDismissBoxState,
         backgroundContent = {
@@ -166,7 +179,7 @@ fun NoteCard(note: NoteOverview, onClick: () -> Unit) {
                         contentDescription = "Remove item",
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Red)
+                            .background(Color.Red, shape = RoundedCornerShape(16.dp))
                             .wrapContentSize(Alignment.CenterEnd)
                             .padding(12.dp),
                         tint = Color.White

@@ -2,8 +2,6 @@ package dev.kuchta.notek.note
 
 import Doc
 import Pid
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.snapshotFlow
@@ -13,13 +11,9 @@ import dev.kuchta.notek.Note
 import dev.kuchta.notek.g
 import kotlinx.io.Source
 import dev.kuchta.notek.sync.SendQueue
-import generate_between_pids
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
-import io.ktor.client.plugins.websocket.ws
-import io.ktor.http.HttpMethod
-import io.ktor.websocket.send
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
@@ -29,10 +23,8 @@ import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
-import org.example.Session
 import java.util.TreeMap
 import java.util.UUID
-import kotlin.math.abs
 import kotlin.time.Clock.System.now
 import kotlin.time.ExperimentalTime
 import kotlin.uuid.ExperimentalUuidApi
@@ -77,12 +69,12 @@ class NoteViewModel() : ViewModel() {
     val client = HttpClient(CIO) {
         install(WebSockets)
     }
+
     fun localToCrdtInsert(p: Int, ch: Char) {
         val pid = crdt.insertAtPhysicalOrder(p+1, ch)
         viewModelScope.launch(Dispatchers.IO) {
-
             pid?.let{
-                sendQueue.enqueue(pid, ch)
+                sendQueue.enqueueInsert(pid, ch)
             }
         }
     }
@@ -90,15 +82,17 @@ class NoteViewModel() : ViewModel() {
     fun localToCrdtDelete(p: Int) {
         val pid = crdt.deleteAtPhysicalOrder(p+1)
         viewModelScope.launch(Dispatchers.IO) {
-            sendQueue.enqueue(pid, null)
+            sendQueue.enqueueDelete(pid)
         }
     }
-    fun loadNote(noteId: UUID) {
+    fun startNote(noteId: UUID) {
         id = noteId
         viewModelScope.launch(Dispatchers.IO) {
-            val note = dao.getNoteById(noteId)
+            var note = dao.getNoteById(noteId)
             if (note == null) {
-                return@launch
+                note = Note(id, name="", content="",
+                    lastEdited = now().toEpochMilliseconds(), crdt.serialized())
+                dao.insert(note)
             }
             val source = note.state.asSource()
             crdt = Doc.fromSource(source)
@@ -106,25 +100,7 @@ class NoteViewModel() : ViewModel() {
             content.setTextAndPlaceCursorAtEnd(crdt.display())
 
             val host = g.sharedPreferences.getString("serverUrl", "").orEmpty()
-            client.ws(method = HttpMethod.Get, host = host, port=9001, path = "/") {
-                val sr = Session.Start(0u,noteId)
-                send(sr.serialized())
-                sendQueue.updates.collect({
-                    // Peek at the first queued update (may be null)
-                    sendQueue.peekFirst()?.let { (pid, ch) ->
-                        if (ch != null) {
-                            // Insert event
-                            val sr = Session.Insert(0u, pid, ch)
-                            send(sr.serialized())
-                        } else {
-                            // Delete event
-                            val sr = Session.Delete(0u, pid)
-                            send(sr.serialized())
-                        }
-                        sendQueue.dequeue(pid)
-                    }
-                })
-            }
+            sendQueue.processUpdates(client, host, id)
 //            withContext(Dispatchers.Main) {
 //                name.setTextAndPlaceCursorAtEnd(note?.name ?: "")
 //                content.setTextAndPlaceCursorAtEnd(note?.content ?: "")
@@ -139,6 +115,16 @@ class NoteViewModel() : ViewModel() {
                 dao.insert(Note(id, name.text.toString(), content.text.toString(), now().toEpochMilliseconds(), crdt.serialized()))
             })
         }
+
+        snapshotFlow { name.text } // Convert Compose State to Kotlin Flow
+            .debounce(1000L)
+            .onEach { debouncedText ->
+                if (debouncedText.isNotBlank()) {
+                    sendQueue.setNewTitle(debouncedText.toString())
+                }
+            }
+            .launchIn(viewModelScope) // Launch this flow collection in the ViewModel's scope
+
     }
 
     fun startNote() {
@@ -146,7 +132,12 @@ class NoteViewModel() : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             dao.insert(Note(id, name="", content="",
                 lastEdited = now().toEpochMilliseconds(), crdt.serialized()))
-            loadNote(id)
+            startNote(id)
+        }
+    }
+    fun onNoteExit() {
+        viewModelScope.launch(Dispatchers.IO) {
+            sendQueue.finish()
         }
     }
 

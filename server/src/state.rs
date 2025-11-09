@@ -40,6 +40,13 @@ pub enum StateCommand {
     UpsertDoc {
         document_id: u128,
     },
+    ChangeName {
+        document_id: u128,
+        name: String,
+    },
+    FlushChanges {
+        document_id: u128
+    },
 }
 
 impl State {
@@ -56,6 +63,7 @@ impl State {
 
             if path.extension().and_then(|s| s.to_str()) == Some("md") {
                 let name = path
+                    .file_stem().unwrap()
                     .to_str()
                     .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
                     .to_string();
@@ -92,47 +100,55 @@ impl State {
             println!("the cmd {:#?}", cmd);
             match cmd {
                 StateCommand::GetSyncFullDoc {
-                    document_id,
-                    respond_to,
-                } => {
-                    let structure = self.get_structure(document_id);
-                    let r = SyncResponses::SyncDoc {
-                        document_id: document_id,
-                        name: structure.name.clone(),
-                        doc: structure.get_doc(),
-                    };
-                    let mut buf = Vec::new();
-                    r.serialize_into(&mut buf);
-                    let _ = respond_to.send(buf);
-                }
+                                            document_id,
+                                            respond_to,
+                                        } => {
+                                            let structure = self.get_structure(document_id);
+                                            let r = SyncResponses::SyncDoc {
+                                                document_id: document_id,
+                                                name: structure.name.clone(),
+                                                doc: structure.get_doc(),
+                                            };
+                                            let mut buf = Vec::new();
+                                            r.serialize_into(&mut buf);
+                                            let _ = respond_to.send(buf);
+                                        }
                 StateCommand::GetSyncList {
-                    last_sync_time,
-                    respond_to,
-                } => {
-                    let docs = self
-                        .by_time
-                        .iter()
-                        // .filter(|&(&t, _)| t >= last_sync_time)
-                        .map(|(&t, &i)| DocSyncInfo::new(t, self.docs[i].id))
-                        .collect();
-                    let r = SyncResponses::SyncList(docs);
-                    println!("the synclist {:#?}", r);
-                    let mut buf = Vec::new();
-                    r.serialize_into(&mut buf);
-                    let _ = respond_to.send(buf);
-                }
+                                            last_sync_time,
+                                            respond_to,
+                                        } => {
+                                            let docs = self
+                                                .by_time
+                                                .iter()
+                                                // .filter(|&(&t, _)| t >= last_sync_time)
+                                                .map(|(&t, &i)| DocSyncInfo::new(t, self.docs[i].id))
+                                                .collect();
+                                            let r = SyncResponses::SyncList(docs);
+                                            println!("the synclist {:#?}", r);
+                                            let mut buf = Vec::new();
+                                            r.serialize_into(&mut buf);
+                                            let _ = respond_to.send(buf);
+                                        }
                 StateCommand::UpdateDoc { document_id, op } => {
-                    let ds = &mut self.docs[self.by_id[&document_id]];
-                    ds.apply(op);
-                    println!("{:#?}", ds)
-                }
+                                            let ds = &mut self.docs[self.by_id[&document_id]];
+                                            ds.applyOp(op);
+                                            println!("{:#?}", ds)
+                                        }
                 StateCommand::UpsertDoc { document_id } => {
-                    if let None = self.by_id.get(&document_id) {
-                        let filename = format!("{}-unnamed.md", document_id);
-                        OpenOptions::new().create(true).write(true).open(&filename);
-                        self.add_doc(filename, Some(document_id));
-                    }
-                }
+                                            if let None = self.by_id.get(&document_id) {
+                                                let name = format!("{}-unnamed", document_id);
+                                                let filename = format!("{}.md", name);
+                                                OpenOptions::new().create(true).write(true).open(&filename);
+                                                self.add_doc(name, Some(document_id));
+                                            }
+                                        }
+                StateCommand::ChangeName { document_id, name } => {
+                                let ds = &mut self.docs[self.by_id[&document_id]];
+                                ds.set_name(&name);
+                            },
+                StateCommand::FlushChanges { document_id } => {
+                      let ds = &mut self.docs[self.by_id[&document_id]];
+                },
             }
         }
     }
@@ -171,7 +187,7 @@ impl DocStructure {
             unreachable!()
         }
     }
-    fn apply(&mut self, op: DocOp) {
+    fn applyOp(&mut self, op: DocOp) {
         match &mut self.state {
             DocState::Missing => {} // TODO self.load_state().unwrap(),
             DocState::Cached(doc) => match op {
@@ -180,7 +196,7 @@ impl DocStructure {
             },
         }
     }
-    fn create_new(structure_path: &Path, doc_id: u128) -> Result<Self> {
+    fn create_new(structure_path: &Path, name: &str, doc_id: u128) -> Result<Self> {
         let file = File::create(structure_path)?;
         let mut writer = BufWriter::new(file);
 
@@ -197,10 +213,7 @@ impl DocStructure {
 
         Ok(DocStructure {
             id: doc_id,
-            name: structure_path
-                .to_str()
-                .unwrap_or_default()
-                .to_string(),
+            name: name.to_string(),
             last_modified: timestamp_ms,
             state: DocState::Cached(doc),
         })
@@ -223,15 +236,22 @@ impl DocStructure {
     }
 
     fn load_or_create(name: &str, upsertid: Option<u128>) -> Result<Self> {
-        let structure_path_str = format!("{}.structure", name);
+        let structure_path_str = format!("{}.md.structure", name);
         let structure_path = Path::new(&structure_path_str);
 
         if structure_path.exists() {
             Self::read_existing(structure_path, name.to_string())
         } else {
             let id = upsertid.unwrap_or(Uuid::new_v4().as_u128());
-            Self::create_new(structure_path, id)
+            Self::create_new(structure_path, name, id)
         }
+    }
+    fn set_name(&mut self, name: &str) -> anyhow::Result<()> {
+        println!("old {} new {}", self.name, name);
+        fs::rename(format!("{}.md.structure", self.name), format!("{}.md.structure", name))?;
+        fs::rename(format!("{}.md", self.name), format!("{}.md", name))?;
+        self.name = name.to_string();
+        Ok(())
     }
 }
 

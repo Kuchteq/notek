@@ -36,6 +36,13 @@ sealed class Session {
         }
     }
 
+    data class ChangeName(val name: String) : Session() {
+        override fun serialize(sink: Sink) {
+            sink.writeUByte(67u)
+            sink.write(name.toByteArray())
+        }
+    }
+
     companion object {
         fun deserialize(source: Source): Session {
             return when (val tag = source.readUByte().toUInt()) {

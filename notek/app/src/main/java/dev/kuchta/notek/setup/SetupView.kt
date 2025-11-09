@@ -58,11 +58,11 @@ fun SetupView(vm: SetupViewModel = viewModel()) {
             TopAppBar(title = { Text("Server setup") })
             TextField(vm.serverUrl, label = {Text("Adress")}, modifier = Modifier.fillMaxWidth())
             OutlinedCard(modifier = Modifier.fillMaxSize()) {
-                Button(onClick = {
-            scope.launch {
-                vm.startWebsocket(vm.serverUrl.text.toString())
-            }
+                Button(onClick = { scope.launch { vm.startWebsocket(vm.serverUrl.text.toString()) }
                 }) { Text("Ping") }
+
+                Button(onClick = { scope.launch { g.db.noteDao().wipe() }
+                }) { Text("WipeDb") }
             }
 //        Box(modifier = Modifier.fillMaxSize()) {
 //            Card(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)) {

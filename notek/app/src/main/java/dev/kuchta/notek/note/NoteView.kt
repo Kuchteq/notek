@@ -19,27 +19,28 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.substring
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class,
     ExperimentalUuidApi::class, ExperimentalFoundationApi::class
 )
-fun NoteView(noteId: UUID, vm : NoteViewModel = viewModel(key = noteId.toString())) {
+fun NoteView(noteId: UUID, vm : NoteViewModel = viewModel(key=noteId.toString())) {
     LaunchedEffect(noteId) {
-        if (noteId == UUID(0,0)) {
-            vm.startNote()
-        } else {
-            vm.loadNote(noteId)
+        vm.startNote(noteId)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            // This is called when the Composable leaves the screen
+            vm.onNoteExit()
         }
     }
 Scaffold { contentPadding ->

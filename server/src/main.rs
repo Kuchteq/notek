@@ -95,6 +95,8 @@ async fn start_handling_session_requests(
                 .await?;
         }
     }
+    println!("Finished");
+    // session.flush_changes(&state_tx).await;
     Ok(())
 }
 async fn handle_sync_request(

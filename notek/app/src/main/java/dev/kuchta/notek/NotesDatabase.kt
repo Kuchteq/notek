@@ -37,6 +37,9 @@ interface NoteDao {
 
     @Query("SELECT * FROM notes WHERE id = :id")
     suspend fun getNoteById(id: UUID): Note?
+
+    @Query("DELETE FROM notes")
+    suspend fun wipe()
 }
 
 @Database(entities = [Note::class], version = 1)

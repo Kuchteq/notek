@@ -35,7 +35,7 @@ fun HomeActionBar() {
         floatingActionButton = {
             // Match the FAB to the vibrantColors. See also StandardFloatingActionButton.
             FloatingToolbarDefaults.VibrantFloatingActionButton(
-                onClick = {g.navStack.add(NavDest.Note(UUID(0,0)))}
+                onClick = {g.navStack.add(NavDest.Note(UUID.randomUUID()))}
             ) {
                 Icon(Icons.Filled.Add, "Add Note")
             }

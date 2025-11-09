@@ -177,8 +177,14 @@ impl SessionMember {
                         }).await;
                     }
             SessionMessage::NewSession { site, doc } => todo!(),
-            SessionMessage::ChangeName { name } => todo!(),
+            SessionMessage::ChangeName { name } => {
+                state_tx.send(StateCommand::ChangeName { document_id: self.document_id, name }).await;
+            },
         }
         Ok(())
     }
+    pub async fn flush_changes(&self, state_tx: &mpsc::Sender<StateCommand>) {
+        state_tx.send(StateCommand::FlushChanges { document_id: self.document_id });
+    }
+
 }
