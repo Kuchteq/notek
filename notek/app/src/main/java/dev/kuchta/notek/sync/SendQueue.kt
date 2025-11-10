@@ -96,6 +96,7 @@ class SendQueue {
                 }
                 if (shouldFinish) {
                     close(CloseReason(CloseReason.Codes.NORMAL, "All updates processed"))
+                    shouldFinish = false
                 }
             })
         }

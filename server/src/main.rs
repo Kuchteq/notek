@@ -38,7 +38,6 @@ async fn handle_connection(
     state_tx: mpsc::Sender<StateCommand>,
 ) -> anyhow::Result<()> {
     let mut ws = accept_async(stream).await?;
-
     if let Some(msg) = ws.next().await {
         let msg = msg?;
         if let Message::Binary(bin) = msg {
@@ -96,7 +95,7 @@ async fn start_handling_session_requests(
         }
     }
     println!("Finished");
-    // session.flush_changes(&state_tx).await;
+    session.flush_changes(&state_tx).await;
     Ok(())
 }
 async fn handle_sync_request(
@@ -109,27 +108,30 @@ async fn handle_sync_request(
     println!("{:#?}", req);
     match req {
         SyncRequests::SyncList { .. } => {
-            let (resp_tx, resp_rx) = oneshot::channel();
-            state_tx
-                .send(StateCommand::GetSyncList {
-                    last_sync_time: 0,
-                    respond_to: resp_tx,
-                })
-                .await?;
-            let buf = resp_rx.await?;
-            ws_sink.send(Message::from(buf)).await?;
-        }
+                let (resp_tx, resp_rx) = oneshot::channel();
+                state_tx
+                    .send(StateCommand::GetSyncList {
+                        last_sync_time: 0,
+                        respond_to: resp_tx,
+                    })
+                    .await?;
+                let buf = resp_rx.await?;
+                ws_sink.send(Message::from(buf)).await?;
+            }
         SyncRequests::SyncDoc { document_id, .. } => {
-            let (resp_tx, resp_rx) = oneshot::channel();
-            state_tx
-                .send(StateCommand::GetSyncFullDoc {
-                    document_id,
-                    respond_to: resp_tx,
-                })
-                .await?;
-            let buf = resp_rx.await?;
-            ws_sink.send(Message::from(buf)).await?;
-        }
+                let (resp_tx, resp_rx) = oneshot::channel();
+                state_tx
+                    .send(StateCommand::GetSyncFullDoc {
+                        document_id,
+                        respond_to: resp_tx,
+                    })
+                    .await?;
+                let buf = resp_rx.await?;
+                ws_sink.send(Message::from(buf)).await?;
+            }
+        SyncRequests::DeleteDoc { document_id } => {
+            state_tx.send(StateCommand::DeleteDoc { document_id }).await;
+        },
     }
     Ok(())
 }

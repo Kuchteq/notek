@@ -184,7 +184,7 @@ impl SessionMember {
         Ok(())
     }
     pub async fn flush_changes(&self, state_tx: &mpsc::Sender<StateCommand>) {
-        state_tx.send(StateCommand::FlushChanges { document_id: self.document_id });
+        state_tx.send(StateCommand::FlushChanges { document_id: self.document_id }).await;
     }
 
 }

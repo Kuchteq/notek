@@ -10,7 +10,6 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 #[derive(Debug)]
 pub enum SyncRequests {
-    // epoch miliseconds u64
     SyncList {
         last_sync_time: u64,
     },
@@ -18,6 +17,9 @@ pub enum SyncRequests {
         last_sync_time: u64,
         document_id: u128,
     },
+    DeleteDoc {
+        document_id: u128
+    }
 }
 
 impl SyncRequests {
@@ -31,6 +33,7 @@ impl SyncRequests {
                 last_sync_time: cur.read_u64::<LittleEndian>().unwrap(),
                 document_id: cur.read_u128::<LittleEndian>().unwrap(),
             },
+            3u8 => SyncRequests::DeleteDoc { document_id: cur.read_u128::<LittleEndian>().unwrap() },
             _ => panic!(),
         }
     }

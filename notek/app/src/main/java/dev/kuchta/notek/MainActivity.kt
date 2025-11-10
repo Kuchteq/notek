@@ -1,5 +1,6 @@
 package dev.kuchta.notek
 
+import SyncQueue
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -30,9 +31,12 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import dev.kuchta.notek.home.Home
@@ -62,6 +66,9 @@ object g {
     lateinit var db: NotesDatabase
 }
 
+val LocalSyncQueue = compositionLocalOf<SyncQueue> {
+    error("No SyncQueue provided")
+}
 @Composable
 fun Notek() {
     val context = LocalContext.current
@@ -74,9 +81,13 @@ fun Notek() {
 
     val topLevelBackStack = remember { TopLevelBackStack<Any>(startingView) }
     g.navStack = topLevelBackStack
-
     g.db = NotesDatabase.getDatabase(context)
-    NotekNavHost(topLevelBackStack)
+
+    val syncQueue: SyncQueue = viewModel()
+    syncQueue.startProcessing()
+    CompositionLocalProvider(LocalSyncQueue provides syncQueue) {
+        NotekNavHost(topLevelBackStack)
+    }
 }
 sealed class NavDest {
     data object Home : NavDest()

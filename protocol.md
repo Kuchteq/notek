@@ -37,6 +37,10 @@ Requests from the client:
   | ⌈ u8  site
   ⎩ ⌊ u32 ident
 
+4. delete_doc
+- u8 header - 3
+- u128 document_id
+
 Responses from the server:
 1. synclist_resonse
 - u8 header - 32

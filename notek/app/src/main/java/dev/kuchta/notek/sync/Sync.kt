@@ -13,6 +13,7 @@ sealed class SyncRequests {
     data class SyncList(val lastSyncTime: ULong) : SyncRequests()
     data class SyncDoc(val lastSyncTime: ULong, val documentId: Uuid) : SyncRequests()
 
+    data class DeleteNote(val documentId: Uuid) : SyncRequests()
     fun serialize(sink: Sink) {
         when (this) {
             is SyncList -> {
@@ -22,6 +23,10 @@ sealed class SyncRequests {
             is SyncDoc -> {
                 sink.writeUByte(1u);
                 sink.writeULong(0u)
+                sink.write(documentId.toByteArray())
+            }
+            is DeleteNote -> {
+                sink.writeUByte(3u)
                 sink.write(documentId.toByteArray())
             }
         }

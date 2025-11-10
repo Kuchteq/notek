@@ -31,14 +31,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.kuchta.notek.LocalSyncQueue
 import dev.kuchta.notek.NavDest
 import dev.kuchta.notek.g
 import kotlinx.coroutines.launch
+import org.example.SyncRequests
 
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 fun SetupView(vm: SetupViewModel = viewModel()) {
     val scope = rememberCoroutineScope() // To launch coroutines in Compose
+    val syncQueue = LocalSyncQueue.current
 
     Scaffold(
         floatingActionButton = {
@@ -58,7 +61,7 @@ fun SetupView(vm: SetupViewModel = viewModel()) {
             TopAppBar(title = { Text("Server setup") })
             TextField(vm.serverUrl, label = {Text("Adress")}, modifier = Modifier.fillMaxWidth())
             OutlinedCard(modifier = Modifier.fillMaxSize()) {
-                Button(onClick = { scope.launch { vm.startWebsocket(vm.serverUrl.text.toString()) }
+                Button(onClick = { syncQueue.enqueue(SyncQueueItem.Sync);
                 }) { Text("Ping") }
 
                 Button(onClick = { scope.launch { g.db.noteDao().wipe() }

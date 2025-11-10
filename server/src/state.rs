@@ -40,12 +40,15 @@ pub enum StateCommand {
     UpsertDoc {
         document_id: u128,
     },
+    DeleteDoc {
+        document_id: u128,
+    },
     ChangeName {
         document_id: u128,
         name: String,
     },
     FlushChanges {
-        document_id: u128
+        document_id: u128,
     },
 }
 
@@ -63,7 +66,8 @@ impl State {
 
             if path.extension().and_then(|s| s.to_str()) == Some("md") {
                 let name = path
-                    .file_stem().unwrap()
+                    .file_stem()
+                    .unwrap()
                     .to_str()
                     .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
                     .to_string();
@@ -90,8 +94,8 @@ impl State {
         // self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
     }
 
-    pub fn get_structure(&self, document_id: u128) -> &DocStructure {
-        &self.docs[self.by_id[&document_id]]
+    pub fn get_structure(&mut self, document_id: u128) -> &mut DocStructure {
+        &mut self.docs[self.by_id[&document_id]]
         // self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
     }
 
@@ -100,55 +104,68 @@ impl State {
             println!("the cmd {:#?}", cmd);
             match cmd {
                 StateCommand::GetSyncFullDoc {
-                                            document_id,
-                                            respond_to,
-                                        } => {
-                                            let structure = self.get_structure(document_id);
-                                            let r = SyncResponses::SyncDoc {
-                                                document_id: document_id,
-                                                name: structure.name.clone(),
-                                                doc: structure.get_doc(),
-                                            };
-                                            let mut buf = Vec::new();
-                                            r.serialize_into(&mut buf);
-                                            let _ = respond_to.send(buf);
-                                        }
+                    document_id,
+                    respond_to,
+                } => {
+                    let structure = self.get_structure(document_id);
+                    let r = SyncResponses::SyncDoc {
+                        document_id: document_id,
+                        name: structure.name.clone(),
+                        doc: structure.get_doc(),
+                    };
+                    let mut buf = Vec::new();
+                    r.serialize_into(&mut buf);
+                    let _ = respond_to.send(buf);
+                }
                 StateCommand::GetSyncList {
-                                            last_sync_time,
-                                            respond_to,
-                                        } => {
-                                            let docs = self
-                                                .by_time
-                                                .iter()
-                                                // .filter(|&(&t, _)| t >= last_sync_time)
-                                                .map(|(&t, &i)| DocSyncInfo::new(t, self.docs[i].id))
-                                                .collect();
-                                            let r = SyncResponses::SyncList(docs);
-                                            println!("the synclist {:#?}", r);
-                                            let mut buf = Vec::new();
-                                            r.serialize_into(&mut buf);
-                                            let _ = respond_to.send(buf);
-                                        }
+                    last_sync_time,
+                    respond_to,
+                } => {
+                    let docs = self
+                        .by_time
+                        .iter()
+                        // .filter(|&(&t, _)| t >= last_sync_time)
+                        .map(|(&t, &i)| DocSyncInfo::new(t, self.docs[i].id))
+                        .collect();
+                    let r = SyncResponses::SyncList(docs);
+                    println!("the synclist {:#?}", r);
+                    let mut buf = Vec::new();
+                    r.serialize_into(&mut buf);
+                    let _ = respond_to.send(buf);
+                }
                 StateCommand::UpdateDoc { document_id, op } => {
-                                            let ds = &mut self.docs[self.by_id[&document_id]];
-                                            ds.applyOp(op);
-                                            println!("{:#?}", ds)
-                                        }
+                    let ds = &mut self.docs[self.by_id[&document_id]];
+                    ds.applyOp(op);
+                    println!("{:#?}", ds)
+                }
                 StateCommand::UpsertDoc { document_id } => {
-                                            if let None = self.by_id.get(&document_id) {
-                                                let name = format!("{}-unnamed", document_id);
-                                                let filename = format!("{}.md", name);
-                                                OpenOptions::new().create(true).write(true).open(&filename);
-                                                self.add_doc(name, Some(document_id));
-                                            }
-                                        }
+                    if let None = self.by_id.get(&document_id) {
+                        let name = format!("{}-unnamed", document_id);
+                        let filename = format!("{}.md", name);
+                        OpenOptions::new().create(true).write(true).open(&filename);
+                        self.add_doc(name, Some(document_id));
+                    }
+                }
                 StateCommand::ChangeName { document_id, name } => {
-                                let ds = &mut self.docs[self.by_id[&document_id]];
-                                ds.set_name(&name);
-                            },
+                    self.get_structure(document_id).set_name(&name);
+                }
                 StateCommand::FlushChanges { document_id } => {
-                      let ds = &mut self.docs[self.by_id[&document_id]];
-                },
+                    println!("flushed!");
+                    self.get_structure(document_id).flush();
+                }
+                StateCommand::DeleteDoc { document_id } => {
+                    if let Some(&idx) = self.by_id.get(&document_id) {
+                        let removed_doc = self.docs.swap_remove(idx);
+                        self.by_id.remove(&document_id);
+                        self.by_time.remove(&removed_doc.last_modified);
+                        removed_doc.delete_files();
+                        if idx < self.docs.len() {
+                            let moved_doc = &self.docs[idx];
+                            self.by_id.insert(moved_doc.id, idx);
+                            self.by_time.insert(moved_doc.last_modified, idx);
+                        }
+                    }
+                }
             }
         }
     }
@@ -197,26 +214,47 @@ impl DocStructure {
         }
     }
     fn create_new(structure_path: &Path, name: &str, doc_id: u128) -> Result<Self> {
-        let file = File::create(structure_path)?;
-        let mut writer = BufWriter::new(file);
+        let timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
 
-        let timestamp_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_millis() as u64;
-
-        writer.write_all(&doc_id.to_le_bytes())?;
-        writer.write_all(&timestamp_ms.to_le_bytes())?;
-
-        let doc = Doc::new("");
-        doc.write_bytes(&mut writer)?;
-        writer.flush()?;
-
-        Ok(DocStructure {
+        let ds = DocStructure {
             id: doc_id,
             name: name.to_string(),
             last_modified: timestamp_ms,
-            state: DocState::Cached(doc),
-        })
+            state: DocState::Cached(Doc::new("")),
+        };
+        ds.flush();
+
+        Ok(ds)
+    }
+    fn flush(&self) -> Result<()> {
+        let structure_path_str = format!("{}.md.structure", self.name);
+        let file = File::create(structure_path_str)?;
+        let mut writer = BufWriter::new(file);
+
+        writer.write_all(&self.id.to_le_bytes())?;
+        writer.write_all(&self.last_modified.to_le_bytes())?;
+        if let DocState::Cached(doc) = &self.state {
+            doc.write_bytes(&mut writer);
+            let human_readable_path = format!("{}.md", self.name);
+            let human_readable = &String::from_iter(doc.values().iter())[1..doc.len() - 1];
+            std::fs::write(human_readable_path, human_readable);
+        }
+        writer.flush();
+
+        Ok(())
+    }
+
+    fn delete_files(&self) -> Result<()> {
+        fs::remove_file(self.get_structure_path());
+        fs::remove_file(self.get_plainmd_path());
+        Ok(())
+    }
+
+    fn get_structure_path(&self) -> String {
+        format!("{}.md.structure",self.name)
+    }
+    fn get_plainmd_path(&self) -> String {
+        format!("{}.md",self.name)
     }
 
     fn read_existing(structure_path: &Path, name: String) -> Result<Self> {
@@ -246,9 +284,13 @@ impl DocStructure {
             Self::create_new(structure_path, name, id)
         }
     }
+
     fn set_name(&mut self, name: &str) -> anyhow::Result<()> {
         println!("old {} new {}", self.name, name);
-        fs::rename(format!("{}.md.structure", self.name), format!("{}.md.structure", name))?;
+        fs::rename(
+            format!("{}.md.structure", self.name),
+            format!("{}.md.structure", name),
+        )?;
         fs::rename(format!("{}.md", self.name), format!("{}.md", name))?;
         self.name = name.to_string();
         Ok(())

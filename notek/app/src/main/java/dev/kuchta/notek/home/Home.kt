@@ -1,5 +1,6 @@
 package dev.kuchta.notek.home
 
+import SyncQueueItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.kuchta.notek.LocalSyncQueue
 import dev.kuchta.notek.NavDest
 import dev.kuchta.notek.g
 import dev.kuchta.notek.note.HomeViewModel
@@ -58,12 +60,13 @@ import dev.kuchta.notek.setup.SetupViewModel
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 
 data class NoteOverview(
-    val id: String,
+    val id: UUID,
     val title: String,
     val content: String,
     val lastEdited: String
@@ -75,7 +78,6 @@ fun Home(vm: HomeViewModel = viewModel()) {
     // Simulated connection status (in real app, this would be from a ViewModel or state)
     val isConnected by remember { mutableStateOf(true) }
     val notes by vm.notes.collectAsState()
-
 
     Scaffold(
         floatingActionButton = {
@@ -100,7 +102,7 @@ fun Home(vm: HomeViewModel = viewModel()) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(notes) { note ->
-                    NoteCard(NoteOverview(note.id.toString(), note.name, note.content,
+                    NoteCard(NoteOverview(note.id, note.name, note.content,
                         formatEpochMillis(note.lastEdited)) ) {
                         g.navStack.add(NavDest.Note(note.id))
                     }
@@ -154,6 +156,8 @@ fun NoteCard(note: NoteOverview, onClick: () -> Unit) {
 //            // Reset item when toggling done status
 //            it != StartToEnd
     }
+
+    val syncQueue = LocalSyncQueue.current
     val swipeToDismissBoxState =
         rememberSwipeToDismissBoxState(
             SwipeToDismissBoxValue.Settled,
@@ -167,6 +171,7 @@ fun NoteCard(note: NoteOverview, onClick: () -> Unit) {
             scope.launch {
                 swipeToDismissBoxState.snapTo(SwipeToDismissBoxValue.Settled)
             }
+            syncQueue.enqueue(SyncQueueItem.DeleteNote(note.id ))
         }
     }
     SwipeToDismissBox(
