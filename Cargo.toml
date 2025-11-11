@@ -1,4 +1,4 @@
 [workspace]
-members = [ "algos","server", "tui"]
+members = [ "algos", "headless","server", "tui"]
 resolver = "3"
 
