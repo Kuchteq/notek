@@ -6,13 +6,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use algos::doc::Doc;
+use algos::{doc::Doc, sync::{DocOp, DocSyncInfo, SyncResponses}};
 use anyhow::{Result, anyhow};
 use byteorder::{LittleEndian, ReadBytesExt};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::sync::{DocOp, DocSyncInfo, SyncResponses};
 
 #[derive(Debug)]
 pub struct State {

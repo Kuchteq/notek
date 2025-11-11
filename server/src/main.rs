@@ -1,3 +1,4 @@
+use algos::sync::SyncRequests;
 use anyhow::{anyhow};
 use futures::stream::SplitSink;
 use tokio_tungstenite::WebSocketStream;
@@ -9,10 +10,8 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 use crate::session::{SessionMember};
 use crate::state::{State, StateCommand};
-use crate::sync::{SyncRequests};
 mod session;
 mod state;
-mod sync;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

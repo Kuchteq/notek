@@ -3,9 +3,10 @@ use std::{
     panic,
 };
 
-use algos::{doc::Doc, pid::Pid};
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
+
+use crate::{doc::Doc, pid::Pid};
 
 
 #[derive(Debug)]
