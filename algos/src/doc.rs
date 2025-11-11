@@ -8,9 +8,16 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::{pid::{generate_between_pids, Pid}, pos::Pos, LBASE};
 
+
+#[cfg(feature = "btree")]
+use std::collections::BTreeMap as MapType;
+
+#[cfg(feature = "indexmap")]
+use indexmap::IndexMap as MapType;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Doc {
-    content: BTreeMap<Pid, char>,
+    content: MapType<Pid, char>,
 }
 
 impl Doc {
