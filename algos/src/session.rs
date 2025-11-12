@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{doc::Doc, pid::Pid};
 
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug,  Clone)]
 pub enum SessionMessage {
     Start {
         document_id: u128,

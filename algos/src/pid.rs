@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use crate::{pos::Pos, LBASE};
 
 /// A PID is a vector of positions
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Pid(pub Vec<Pos>);
 
 impl Pid {

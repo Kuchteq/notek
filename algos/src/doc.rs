@@ -15,7 +15,7 @@ use std::collections::BTreeMap as MapType;
 #[cfg(feature = "indexmap")]
 use indexmap::IndexMap as MapType;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Doc {
     content: MapType<Pid, char>,
 }
@@ -32,7 +32,7 @@ impl Doc {
         );
 
         let mut d = Doc {
-            content: BTreeMap::from([beg.clone(), end.clone()]),
+            content: MapType::from([beg.clone(), end.clone()]),
         };
         if content.is_empty() {
             return d
@@ -50,33 +50,35 @@ impl Doc {
         d
     }
     pub fn right(&self, pid: &Pid) -> Pid {
-        self.content.range(pid..).skip(1).next().unwrap().0.clone()
+        self.content.get_index_of(pid).and_then(|i| self.content.get_index(i+1)).unwrap().0.clone()
+        // self.content.range(pid..).skip(1).next().unwrap().0.clone();
     }
     pub fn left(&self, pid: &Pid) -> Pid {
-        self.content.range(..pid).next_back().unwrap().0.clone()
+        // self.content.range(..pid).next_back().unwrap().0.clone()
+        self.content.get_index_of(pid).and_then(|i| self.content.get_index(i-1)).unwrap().0.clone()
     }
 
-    pub fn offset(&self, pid: &Pid, offset: isize) -> Option<Pid> {
-        if offset == 0 {
-            return Some(pid.clone());
-        }
-
-        if offset > 0 {
-            // move right
-            self.content
-                .range(pid..) // start at pid
-                .skip(1) // skip self
-                .nth((offset - 1) as usize)
-                .map(|(k, _)| k.clone())
-        } else {
-            // move left
-            self.content
-                .range(..pid) // all before pid
-                .rev() // backwards
-                .nth((-offset - 1) as usize)
-                .map(|(k, _)| k.clone())
-        }
-    }
+    // pub fn offset(&self, pid: &Pid, offset: isize) -> Option<Pid> {
+    //     if offset == 0 {
+    //         return Some(pid.clone());
+    //     }
+    //
+    //     if offset > 0 {
+    //         // move right
+    //         self.content
+    //             .range(pid..) // start at pid
+    //             .skip(1) // skip self
+    //             .nth((offset - 1) as usize)
+    //             .map(|(k, _)| k.clone())
+    //     } else {
+    //         // move left
+    //         self.content
+    //             .range(..pid) // all before pid
+    //             .rev() // backwards
+    //             .nth((-offset - 1) as usize)
+    //             .map(|(k, _)| k.clone())
+    //     }
+    // }
     pub fn keys(&self) -> Vec<Pid> {
         self.content.keys().cloned().collect()
     }
@@ -129,7 +131,7 @@ impl Doc {
     }
 
     pub fn from_reader<R: Read>(reader: &mut R, n: usize) -> Self {
-        let mut content = BTreeMap::new();
+        let mut content = MapType::new();
 
         for _ in 0..n {
             let data_len = reader.read_u8().unwrap() as usize;
@@ -148,7 +150,7 @@ impl Doc {
         Doc { content }
     }
     pub fn from_reader_eof<R: Read>(reader: &mut R) -> Result<Self> {
-        let mut content = BTreeMap::new();
+        let mut content = MapType::new();
 
         loop {
             let data_len = match reader.read_u8() {
@@ -195,6 +197,9 @@ impl Doc {
         let new = generate_between_pids(&pid, &right, 1);
         self.content.insert(new.clone(), c);
         return new;
+    }
+    pub fn insert_at(&mut self, idx: usize) {
+        // self.content
     }
 
     pub fn delete(&mut self, pid: &Pid) {

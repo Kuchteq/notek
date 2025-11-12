@@ -5,7 +5,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 
 /// A single position in a PID
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct Pos {
     pub ident: u32,
     pub site: u8,
