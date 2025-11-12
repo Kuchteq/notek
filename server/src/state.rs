@@ -212,14 +212,22 @@ impl DocStructure {
             },
         }
     }
-    fn create_new(structure_path: &Path, name: &str, doc_id: u128) -> Result<Self> {
+    // fn create_structure_for_existing(name)
+    fn create_new(name: &str, doc_id: u128) -> Result<Self> {
         let timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
+
+        let plaintext = format!("{}.md", name);
+        let plaintext_path = Path::new(&plaintext);
+        let mut contents = String::new();
+        if plaintext_path.exists() {
+            contents = fs::read_to_string(plaintext_path).unwrap();
+        }
 
         let ds = DocStructure {
             id: doc_id,
             name: name.to_string(),
             last_modified: timestamp_ms,
-            state: DocState::Cached(Doc::new("")),
+            state: DocState::Cached(Doc::new(&contents)),
         };
         ds.flush();
 
@@ -280,7 +288,7 @@ impl DocStructure {
             Self::read_existing(structure_path, name.to_string())
         } else {
             let id = upsertid.unwrap_or(Uuid::new_v4().as_u128());
-            Self::create_new(structure_path, name, id)
+            Self::create_new(name, id)
         }
     }
 
