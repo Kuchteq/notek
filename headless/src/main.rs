@@ -44,15 +44,17 @@ fn main() -> std::io::Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                println!("Client connected!");
-                let msg = EditorMessage::deserialize(stream);
-                match msg {
-                    EditorMessage::Update { inserts, deletes } => {
-                        // for insert in inserts {
-                        //     tx.send(SessionMessage::Insert { site: 0, pid: (), c: () })
-                        // }
+                let updates = EditorMessage::deserialize_all(stream);
+
+                for update in updates.unwrap() {
+                    match update {
+                        EditorMessage::Insert(idx, chr) => {
+                            
+                        }
+                        EditorMessage::Delete(idx) => todo!(),
                     }
                 }
+
 
                 // stream.write_all(b"Hello from server")?;
             }

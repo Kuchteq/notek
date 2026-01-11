@@ -1,36 +1,45 @@
-use std::io::{Cursor, Read};
+use std::io::{self, Cursor, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
 #[derive(Debug)]
 pub enum EditorMessage {
-    Update {
-        inserts: Vec<(u32, char)>,
-        deletes: Vec<u32>,
-    },
+    Insert(u32, char),
+    Delete(u32),
 }
 
 impl EditorMessage {
-    pub fn deserialize<R: Read>(mut reader: R) -> Self {
-        // match reader.read_u8().unwrap() {
-        //     _ => {
-                let number_of_inserts = reader.read_u32::<LittleEndian>().unwrap();
-                let inserts: Vec<(u32, char)> = (0..number_of_inserts)
-                    .map(|_| {
-                        let idx = reader.read_u32::<LittleEndian>().unwrap();
-                        let char = reader.read_u32::<LittleEndian>().unwrap();
-                        (idx, char::from_u32(char).unwrap())
-                    })
-                    .collect();
+    pub fn deserialize<R: Read>(mut reader: R) -> io::Result<Self> {
+        let v = reader.read_u32::<LittleEndian>()?;
 
-                let number_of_deletes = reader.read_u32::<LittleEndian>().unwrap();
-                let deletes: Vec<u32> = (0..number_of_deletes)
-                    .map(|_| {
-                        reader.read_u32::<LittleEndian>().unwrap()
-                    })
-                    .collect();
-                Self::Update { inserts: inserts, deletes: deletes }
-            // }
-        // }
+        let op = (v >> 31) & 1;
+        let index = v & 0x7FFF_FFFF;
+
+        if op == 0 {
+            let c = reader.read_u32::<LittleEndian>()?;
+            let ch = char::from_u32(c)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid char"))?;
+            Ok(EditorMessage::Insert(index, ch))
+        } else {
+            Ok(EditorMessage::Delete(index))
+        }
+    }
+
+    pub fn deserialize_all<R: Read>(mut reader: R) -> io::Result<Vec<Self>> {
+        let mut messages = Vec::new();
+
+        loop {
+            match Self::deserialize(&mut reader) {
+                Ok(msg) => messages.push(msg),
+
+                Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                    break;
+                }
+
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(messages)
     }
 }
