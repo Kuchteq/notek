@@ -5,7 +5,7 @@ use rand::{rng, seq::SliceRandom};
 struct Node {
     keys: Vec<usize>,
     children: Vec<Node>,
-    children_counts: Vec<usize>,
+    size: usize,
     is_leaf: bool,
 }
 
@@ -19,7 +19,7 @@ impl Default for MarTree {
             root: Node {
                 keys: Vec::new(),
                 children: Vec::new(),
-                children_counts: Vec::new(),
+                size: 0,
                 is_leaf: true,
             },
         }
@@ -33,7 +33,7 @@ impl Default for Node {
         Node {
             keys: Vec::new(),
             children: Vec::new(),
-            children_counts: Vec::new(),
+            size: 0,
             is_leaf: true,
         }
     }
@@ -63,14 +63,14 @@ impl Node {
                 }
             }
             self.children[i].insert_non_full(val);
-            self.children_counts[i] = self.children[i].recompute_size();
+            self.children[i].size = self.children[i].recompute_size();
         }
     }
     fn recompute_size(&self) -> usize {
         if self.is_leaf {
             self.keys.len()
         } else {
-            self.keys.len() + self.children_counts.iter().sum::<usize>()
+            self.keys.len() + self.children.iter().map(|c| c.size).sum::<usize>()
         }
     }
 
@@ -84,26 +84,22 @@ impl Node {
 
         // Split children if internal node
         let right_children;
-        let children_counts;
         if is_leaf {
             right_children = Vec::new();
-            children_counts = Vec::new();
         } else {
             right_children = self.children[i].children.split_off(T);
-            children_counts = self.children[i].children_counts.split_off(T)
         };
 
         let right = Node {
             keys: right_keys,
             children: right_children,
-            children_counts: children_counts,
+            size: 0,
             is_leaf,
         };
         // Insert median key and new child into parent
         self.keys.insert(i, mid);
-        self.children_counts.insert(i + 1, right.recompute_size());
         self.children.insert(i + 1, right);
-        self.children_counts[i] = self.children[i].recompute_size();
+        self.children[i].size = self.children[i].recompute_size();
     }
     fn total_keys(&self) -> usize {
         let mut sum = self.keys.len();
@@ -222,7 +218,7 @@ impl Node {
 
         if !self.is_leaf {
             for (i, child) in self.children.iter().enumerate() {
-                print!("{}  ({}) 'c:{}'", indent, i, self.children_counts[i]);
+                print!("{}  ({}) 'c:{}'", indent, i, self.children[i].size);
                 child.print(depth + 1);
             }
         }
@@ -271,7 +267,7 @@ impl MarTree {
             let mut new_root = Node {
                 keys: Vec::new(),
                 children: vec![old_root],
-                children_counts: vec![s],
+                size: s,
                 is_leaf: false,
             };
             new_root.split_child(0);
@@ -309,7 +305,7 @@ fn main() {
         root: Node {
             keys: Vec::new(),
             children: Vec::new(),
-            children_counts: Vec::new(),
+            size: 0,
             is_leaf: true,
         },
     };
