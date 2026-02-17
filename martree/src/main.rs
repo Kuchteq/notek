@@ -1,13 +1,11 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::Instant,
-};
+use std::{collections::BTreeSet, time::Instant};
 
 use rand::{rng, seq::SliceRandom};
 
 struct Node {
     keys: Vec<usize>,
     children: Vec<Node>,
+    children_counts: Vec<usize>,
     is_leaf: bool,
 }
 
@@ -21,19 +19,21 @@ impl Default for MarTree {
             root: Node {
                 keys: Vec::new(),
                 children: Vec::new(),
+                children_counts: Vec::new(),
                 is_leaf: true,
             },
         }
     }
 }
 
-const T: usize = 2;
+const T: usize = 4;
 
 impl Default for Node {
     fn default() -> Self {
         Node {
             keys: Vec::new(),
             children: Vec::new(),
+            children_counts: Vec::new(),
             is_leaf: true,
         }
     }
@@ -63,6 +63,14 @@ impl Node {
                 }
             }
             self.children[i].insert_non_full(val);
+            self.children_counts[i] = self.children[i].recompute_size();
+        }
+    }
+    fn recompute_size(&self) -> usize {
+        if self.is_leaf {
+            self.keys.len()
+        } else {
+            self.keys.len() + self.children_counts.iter().sum::<usize>()
         }
     }
 
@@ -75,21 +83,27 @@ impl Node {
         let mid = self.children[i].keys.pop().unwrap(); // median key
 
         // Split children if internal node
-        let right_children = if is_leaf {
-            Vec::new()
+        let right_children;
+        let children_counts;
+        if is_leaf {
+            right_children = Vec::new();
+            children_counts = Vec::new();
         } else {
-            self.children[i].children.split_off(T)
+            right_children = self.children[i].children.split_off(T);
+            children_counts = self.children[i].children_counts.split_off(T)
         };
 
         let right = Node {
             keys: right_keys,
             children: right_children,
+            children_counts: children_counts,
             is_leaf,
         };
-
         // Insert median key and new child into parent
         self.keys.insert(i, mid);
+        self.children_counts.insert(i + 1, right.recompute_size());
         self.children.insert(i + 1, right);
+        self.children_counts[i] = self.children[i].recompute_size();
     }
     fn total_keys(&self) -> usize {
         let mut sum = self.keys.len();
@@ -208,7 +222,7 @@ impl Node {
 
         if !self.is_leaf {
             for (i, child) in self.children.iter().enumerate() {
-                print!("{}  ({}) ", indent, i);
+                print!("{}  ({}) 'c:{}'", indent, i, self.children_counts[i]);
                 child.print(depth + 1);
             }
         }
@@ -253,9 +267,11 @@ impl MarTree {
     fn insert(&mut self, val: usize) {
         if self.root.keys.len() >= T * 2 - 1 {
             let old_root = std::mem::take(&mut self.root);
+            let s = old_root.recompute_size();
             let mut new_root = Node {
                 keys: Vec::new(),
                 children: vec![old_root],
+                children_counts: vec![s],
                 is_leaf: false,
             };
             new_root.split_child(0);
@@ -293,6 +309,7 @@ fn main() {
         root: Node {
             keys: Vec::new(),
             children: Vec::new(),
+            children_counts: Vec::new(),
             is_leaf: true,
         },
     };
@@ -326,52 +343,56 @@ fn main() {
     println!("std::BTreeMap size: {}", std_tree.len());
     println!("Custom B-tree total keys: {}", my_tree.root.total_keys());
 
-    // --- Benchmark deletion for custom B-tree ---
-
-    let mut values_to_delete = values.clone();
-    values_to_delete.shuffle(&mut rng);
-
-    let start = Instant::now();
-    for &v in &values_to_delete {
-        my_tree.remove(v);
-    }
-    let duration = start.elapsed();
-
-    println!(
-        "Custom B-tree deletion of {} elements took: {:?}",
-        N, duration
-    );
-
-    println!(
-        "Custom B-tree total keys after deletion: {}",
-        my_tree.root.total_keys()
-    );
-
-    // --- Benchmark deletion for std::BTreeSet ---
-
-    let mut std_values = values.clone();
-    std_values.shuffle(&mut rng);
-
-    let start = Instant::now();
-    for &v in &std_values {
-        std_tree.remove(&v);
-    }
-    let duration = start.elapsed();
-
-    println!(
-        "std::BTreeSet deletion of {} elements took: {:?}",
-        N, duration
-    );
-
-    println!("std::BTreeSet size after deletion: {}", std_tree.len());
-
     let mut visualizer = MarTree::default();
     visualizer.insert(1);
     visualizer.insert(2);
     visualizer.insert(3);
     visualizer.insert(4);
-    visualizer.remove(4);
-    visualizer.remove(1);
     visualizer.insert(1);
+    visualizer.insert(8);
+    visualizer.insert(9);
+    visualizer.insert(18);
+    visualizer.insert(0);
+    visualizer.insert(8);
+    visualizer.insert(4);
     visualizer.print(2);
+    // --- Benchmark deletion for custom B-tree ---
+
+    // let mut values_to_delete = values.clone();
+    // values_to_delete.shuffle(&mut rng);
+    //
+    // let start = Instant::now();
+    // for &v in &values_to_delete {
+    //     my_tree.remove(v);
+    // }
+    // let duration = start.elapsed();
+    //
+    // println!(
+    //     "Custom B-tree deletion of {} elements took: {:?}",
+    //     N, duration
+    // );
+    //
+    // println!(
+    //     "Custom B-tree total keys after deletion: {}",
+    //     my_tree.root.total_keys()
+    // );
+    //
+    // // --- Benchmark deletion for std::BTreeSet ---
+    //
+    // let mut std_values = values.clone();
+    // std_values.shuffle(&mut rng);
+    //
+    // let start = Instant::now();
+    // for &v in &std_values {
+    //     std_tree.remove(&v);
+    // }
+    // let duration = start.elapsed();
+    //
+    // println!(
+    //     "std::BTreeSet deletion of {} elements took: {:?}",
+    //     N, duration
+    // );
+    //
+    // println!("std::BTreeSet size after deletion: {}", std_tree.len());
+    //
 }
