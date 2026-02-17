@@ -35,12 +35,14 @@ fn main() -> std::io::Result<()> {
     println!("Server listening on {}", socket_path);
     let (tx, rx) = mpsc::channel::<SessionMessage>();
 
-    let d = Doc::new("Hello world! This app is the best thing ever!");
+    let mut d = Doc::new("Hello world! This app is the best thing ever!");
+    println!("{:#?}",d);
 
     thread::spawn(move || {
         handle_server_communication(rx);
     });
 
+                println!("{}",d.to_string());
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -49,13 +51,15 @@ fn main() -> std::io::Result<()> {
                 for update in updates.unwrap() {
                     match update {
                         EditorMessage::Insert(idx, chr) => {
-                            
+                            // d.insert_at(idx as usize, chr);
                         }
-                        EditorMessage::Delete(idx) => todo!(),
+                        EditorMessage::Delete(idx) => {
+                            // d.delete_at(idx as usize)
+                        }
+
                     }
                 }
-
-
+                println!("{}",d.to_string());
                 // stream.write_all(b"Hello from server")?;
             }
             Err(err) => {
