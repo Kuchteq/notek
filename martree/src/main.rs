@@ -44,6 +44,7 @@ impl Node {
     // Insert key into the subtree rooted at node, assuming node itself is not full
     fn insert_non_full(&mut self, val: usize) {
         let mut i = self.keys.len();
+        self.size += 1;
         if self.is_leaf {
             self.keys.push(0);
             while i > 0 && val < self.keys[i - 1] {
@@ -63,7 +64,6 @@ impl Node {
                 }
             }
             self.children[i].insert_non_full(val);
-            self.children[i].size = self.children[i].recompute_size();
         }
     }
     fn recompute_size(&self) -> usize {
@@ -100,6 +100,7 @@ impl Node {
         self.keys.insert(i, mid);
         self.children.insert(i + 1, right);
         self.children[i].size = self.children[i].recompute_size();
+        self.children[i + 1].size = self.children[i + 1].recompute_size();
     }
     fn total_keys(&self) -> usize {
         let mut sum = self.keys.len();
@@ -108,72 +109,136 @@ impl Node {
         }
         sum
     }
-    fn remove(&mut self, val: usize) {
+    fn remove(&mut self, val: usize) -> bool {
         let mut idx = 0;
-
         while idx < self.keys.len() && self.keys[idx] < val {
-            idx += 1
+            idx += 1;
         }
+
+        // -------------------------
+        // CASE 1: Key found here
+        // -------------------------
         if idx < self.keys.len() && self.keys[idx] == val {
+            // 1A: Leaf
             if self.is_leaf {
                 self.keys.remove(idx);
-                return;
+                self.size -= 1;
+                return true;
             }
-            // If not a leaf then its an internal node
+
+            // 1B: Internal node
             if self.children[idx].keys.len() >= T {
-                let predecessor = self.get_predecessor(idx);
-                self.keys[idx] = predecessor;
-                self.children[idx].remove(predecessor);
+                let pred = self.get_predecessor(idx);
+                self.keys[idx] = pred;
+
+                let deleted = self.children[idx].remove(pred);
+                if deleted {
+                    self.size -= 1;
+                }
+                return deleted;
             } else if self.children[idx + 1].keys.len() >= T {
-                let successor = self.get_successor(idx);
-                self.keys[idx] = successor;
-                self.children[idx + 1].remove(successor);
+                let succ = self.get_successor(idx);
+                self.keys[idx] = succ;
+
+                let deleted = self.children[idx + 1].remove(succ);
+                if deleted {
+                    self.size -= 1;
+                }
+                return deleted;
             } else {
                 self.merge_children(idx);
-                self.children[idx].remove(val);
+                let deleted = self.children[idx].remove(val);
+                if deleted {
+                    self.size -= 1;
+                }
+                return deleted;
             }
-            return;
         }
-        // otherwise we need to descend deeper
 
-        // if the child needs a fixup
+        // -------------------------
+        // CASE 2: Not found here
+        // -------------------------
+
+        if self.is_leaf {
+            return false;
+        }
+
+        // Ensure child has ≥ T keys before descending
         if self.children[idx].keys.len() == T - 1 {
-            if idx >= 1 && self.children[idx - 1].keys.len() >= T {
+            if idx > 0 && self.children[idx - 1].keys.len() >= T {
                 self.borrow_left(idx);
-                self.children[idx].remove(val);
             } else if idx + 1 < self.children.len() && self.children[idx + 1].keys.len() >= T {
                 self.borrow_right(idx);
-                self.children[idx].remove(val);
-            // Investigate this if it really works
-            } else if idx == self.keys.len() {
-                self.merge_children(idx - 1);
-                self.children[idx - 1].remove(val);
             } else {
-                self.merge_children(idx);
-                self.children[idx].remove(val);
+                if idx < self.keys.len() {
+                    self.merge_children(idx);
+                } else {
+                    self.merge_children(idx - 1);
+                    idx -= 1;
+                }
             }
-        } else {
-            self.children[idx].remove(val);
         }
+
+        let deleted = self.children[idx].remove(val);
+        if deleted {
+            self.size -= 1;
+        }
+        deleted
     }
     fn borrow_left(&mut self, idx: usize) {
-        let parent = self.keys[idx - 1];
-        self.children[idx].keys.insert(0, parent);
-        let left_key = self.children[idx - 1].keys.pop().unwrap();
-        self.keys[idx - 1] = left_key;
-        if !self.children[idx - 1].is_leaf {
-            let left_last_child = self.children[idx - 1].children.pop().unwrap();
-            self.children[idx].children.insert(0, left_last_child);
+        // Move parent key into child
+        let parent_key = self.keys[idx - 1];
+
+        let (left_slice, right_slice) = self.children.split_at_mut(idx);
+
+        let left = &mut left_slice[idx - 1];
+        let right = &mut right_slice[0];
+
+        right.keys.insert(0, parent_key);
+
+        // Replace parent key with left's last key
+        let borrowed_key = left.keys.pop().unwrap();
+        self.keys[idx - 1] = borrowed_key;
+
+        // Size adjustments for key movement
+        left.size -= 1;
+        right.size += 1;
+
+        if !left.is_leaf {
+            let moved_child = left.children.pop().unwrap();
+            let moved_size = moved_child.size;
+
+            right.children.insert(0, moved_child);
+
+            // Adjust sizes for subtree movement
+            left.size -= moved_size;
+            right.size += moved_size;
         }
     }
     fn borrow_right(&mut self, idx: usize) {
-        let parent = self.keys[idx];
-        self.children[idx].keys.push(parent);
-        let right_key = self.children[idx + 1].keys.remove(0);
-        self.keys[idx] = right_key;
-        if !self.children[idx + 1].is_leaf {
-            let right_first_child = self.children[idx + 1].children.remove(0);
-            self.children[idx].children.push(right_first_child);
+        let parent_key = self.keys[idx];
+
+        let (left_slice, right_slice) = self.children.split_at_mut(idx + 1);
+
+        let left = &mut left_slice[idx];
+        let right = &mut right_slice[0];
+
+        left.keys.push(parent_key);
+
+        let borrowed_key = right.keys.remove(0);
+        self.keys[idx] = borrowed_key;
+
+        left.size += 1;
+        right.size -= 1;
+
+        if !right.is_leaf {
+            let moved_child = right.children.remove(0);
+            let moved_size = moved_child.size;
+
+            left.children.push(moved_child);
+
+            left.size += moved_size;
+            right.size -= moved_size;
         }
     }
 
@@ -187,6 +252,8 @@ impl Node {
         if !child.is_leaf {
             child.children.extend(right.children);
         }
+
+        child.size += right.size + 1;
     }
 
     fn get_predecessor(&self, idx: usize) -> usize {
@@ -291,6 +358,228 @@ impl MarTree {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    // ------------------------------------------------------------
+    // Helper: full structural + size invariant verification
+    // ------------------------------------------------------------
+    fn assert_full_invariants(node: &Node, is_root: bool) -> usize {
+        // 1. Key bounds
+        if !is_root {
+            assert!(
+                node.keys.len() >= T - 1,
+                "Underflow: {} keys",
+                node.keys.len()
+            );
+        }
+        assert!(
+            node.keys.len() <= 2 * T - 1,
+            "Overflow: {} keys",
+            node.keys.len()
+        );
+
+        // 2. Sorted keys
+        for i in 1..node.keys.len() {
+            assert!(node.keys[i - 1] < node.keys[i], "Keys not sorted");
+        }
+
+        // 3. Children count
+        if node.is_leaf {
+            assert!(node.children.is_empty(), "Leaf has children");
+        } else {
+            assert_eq!(
+                node.children.len(),
+                node.keys.len() + 1,
+                "Children mismatch"
+            );
+        }
+
+        // 4. Recursively compute real subtree size
+        let mut actual_size = node.keys.len();
+
+        for child in &node.children {
+            actual_size += assert_full_invariants(child, false);
+        }
+
+        // 5. Size correctness
+        assert_eq!(
+            node.size, actual_size,
+            "Size mismatch: stored={}, actual={}",
+            node.size, actual_size
+        );
+
+        actual_size
+    }
+
+    // ------------------------------------------------------------
+    // Insert sequential
+    // ------------------------------------------------------------
+    #[test]
+    fn insert_sequential() {
+        let mut tree = MarTree::default();
+
+        for i in 0..1000 {
+            tree.insert(i);
+        }
+
+        assert_eq!(tree.root.size, 1000);
+        assert_full_invariants(&tree.root, true);
+    }
+
+    // ------------------------------------------------------------
+    // Delete sequential
+    // ------------------------------------------------------------
+    #[test]
+    fn delete_sequential() {
+        let mut tree = MarTree::default();
+
+        for i in 0..1000 {
+            tree.insert(i);
+        }
+
+        for i in 0..1000 {
+            tree.remove(i);
+            assert_eq!(tree.root.size, 999 - i);
+            assert_full_invariants(&tree.root, true);
+        }
+
+        assert_eq!(tree.root.size, 0);
+        assert!(tree.root.is_leaf);
+    }
+
+    // ------------------------------------------------------------
+    // Delete non-existent values
+    // ------------------------------------------------------------
+    #[test]
+    fn delete_nonexistent() {
+        let mut tree = MarTree::default();
+
+        for i in 0..200 {
+            tree.insert(i);
+        }
+
+        tree.remove(9999);
+
+        assert_eq!(tree.root.size, 200);
+        assert_full_invariants(&tree.root, true);
+    }
+
+    // ------------------------------------------------------------
+    // Reverse insert then delete
+    // ------------------------------------------------------------
+    #[test]
+    fn reverse_insert_delete() {
+        let mut tree = MarTree::default();
+
+        for i in (0..500).rev() {
+            tree.insert(i);
+        }
+
+        assert_full_invariants(&tree.root, true);
+
+        for i in (0..500).rev() {
+            tree.remove(i);
+            assert_full_invariants(&tree.root, true);
+        }
+
+        assert_eq!(tree.root.size, 0);
+    }
+
+    // ------------------------------------------------------------
+    // Randomized reference test
+    // ------------------------------------------------------------
+    #[test]
+    fn randomized_against_btreeset() {
+        let mut tree = MarTree::default();
+        let mut reference = BTreeSet::new();
+
+        for i in 0..500 {
+            tree.insert(i);
+            reference.insert(i);
+        }
+
+        for i in (0..500).rev() {
+            tree.remove(i);
+            reference.remove(&i);
+
+            assert_eq!(tree.root.size, reference.len());
+            assert_full_invariants(&tree.root, true);
+        }
+
+        assert_eq!(tree.root.size, 0);
+    }
+
+    // ------------------------------------------------------------
+    // Mixed random operations stress test
+    // ------------------------------------------------------------
+    #[test]
+    fn stress_mixed_operations() {
+        use rand::Rng;
+
+        let mut tree = MarTree::default();
+        let mut reference = BTreeSet::new();
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..5000 {
+            let value = rng.gen_range(0..1000);
+
+            if rng.gen_bool(0.5) {
+                let inserted = reference.insert(value);
+                if inserted {
+                    tree.insert(value);
+                }
+            } else {
+                tree.remove(value);
+                reference.remove(&value);
+            }
+
+            assert_eq!(tree.root.size, reference.len());
+            assert_full_invariants(&tree.root, true);
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Root shrink behavior
+    // ------------------------------------------------------------
+    #[test]
+    fn root_shrinks_correctly() {
+        let mut tree = MarTree::default();
+
+        for i in 0..200 {
+            tree.insert(i);
+        }
+
+        for i in 0..200 {
+            tree.remove(i);
+            assert_full_invariants(&tree.root, true);
+        }
+
+        assert_eq!(tree.root.size, 0);
+        assert!(tree.root.is_leaf);
+    }
+
+    // ------------------------------------------------------------
+    // Internal size consistency vs total_keys()
+    // ------------------------------------------------------------
+    #[test]
+    fn size_matches_total_keys_function() {
+        let mut tree = MarTree::default();
+
+        for i in 0..300 {
+            tree.insert(i);
+        }
+
+        assert_eq!(tree.root.size, tree.root.total_keys());
+
+        for i in 0..300 {
+            tree.remove(i);
+            assert_eq!(tree.root.size, tree.root.total_keys());
+        }
+    }
+}
 fn main() {
     const N: usize = 100_000; // number of elements to insert
 
@@ -339,8 +628,23 @@ fn main() {
     println!("std::BTreeMap size: {}", std_tree.len());
     println!("Custom B-tree total keys: {}", my_tree.root.total_keys());
 
+    // // --- Test GPT's BTreeMap ---
+    // let mut std_tree = CountedBTreeMap::new();
+    //
+    // let start = Instant::now();
+    // for &v in &values {
+    //     std_tree.insert(v, ());
+    // }
+    // let duration = start.elapsed();
+    // println!(
+    //     "gpt::CountedBTreeMap insertion of {} elements took: {:?}",
+    //     N, duration
+    // );
+    //
+    // println!("gpt::CountedBTreeMap size: {}", std_tree.len());
+
     let mut visualizer = MarTree::default();
-    visualizer.insert(1);
+    visualizer.insert(11);
     visualizer.insert(2);
     visualizer.insert(3);
     visualizer.insert(4);
@@ -350,7 +654,10 @@ fn main() {
     visualizer.insert(18);
     visualizer.insert(0);
     visualizer.insert(8);
+    visualizer.insert(8);
     visualizer.insert(4);
+    visualizer.remove(0);
+    visualizer.remove(1);
     visualizer.print(2);
     // --- Benchmark deletion for custom B-tree ---
 
