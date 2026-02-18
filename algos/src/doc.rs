@@ -1,4 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt};
+use indextreemap::IndexTreeMap;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -11,7 +12,7 @@ use crate::{pid::{generate_between_pids, Pid}, pos::Pos, LBASE};
 #[derive(Debug,  Clone)]
 
 pub struct Doc {
-    content: BTreeMap<Pid, char>,
+    content: IndexTreeMap<Pid, char>,
 }
 
 impl Doc {
@@ -26,7 +27,7 @@ impl Doc {
         );
 
         let mut d = Doc {
-            content: BTreeMap::from([beg.clone(), end.clone()]),
+            content: IndexTreeMap::from_iter([beg.clone(), end.clone()]),
         };
         if content.is_empty() {
             return d
@@ -44,32 +45,39 @@ impl Doc {
         d
     }
     pub fn right(&self, pid: &Pid) -> Pid {
-        self.content.range(pid..).skip(1).next().unwrap().0.clone()
+        // self.content.range(pid..).skip(1).next().unwrap().0.clone()
+
+        // TODO, modify the library to allow obtaining the value from key + offset (maybe)
+        let rightof = self.content.get_index_from_key(pid).unwrap() + 1;
+        self.content.get_key_from_index(rightof).unwrap().clone()
     }
     pub fn left(&self, pid: &Pid) -> Pid {
-        self.content.range(..pid).next_back().unwrap().0.clone()
+        let rightof = self.content.get_index_from_key(pid).unwrap() - 1;
+        self.content.get_key_from_index(rightof).unwrap().clone()
+        // self.content.range(..pid).next_back().unwrap().0.clone()
     }
 
     pub fn offset(&self, pid: &Pid, offset: isize) -> Option<Pid> {
-        if offset == 0 {
-            return Some(pid.clone());
-        }
-
-        if offset > 0 {
-            // move right
-            self.content
-                .range(pid..) // start at pid
-                .skip(1) // skip self
-                .nth((offset - 1) as usize)
-                .map(|(k, _)| k.clone())
-        } else {
-            // move left
-            self.content
-                .range(..pid) // all before pid
-                .rev() // backwards
-                .nth((-offset - 1) as usize)
-                .map(|(k, _)| k.clone())
-        }
+        return None
+        // if offset == 0 {
+        //     return Some(pid.clone());
+        // }
+        //
+        // if offset > 0 {
+        //     // move right
+        //     self.content
+        //         .range(pid..) // start at pid
+        //         .skip(1) // skip self
+        //         .nth((offset - 1) as usize)
+        //         .map(|(k, _)| k.clone())
+        // } else {
+        //     // move left
+        //     self.content
+        //         .range(..pid) // all before pid
+        //         .rev() // backwards
+        //         .nth((-offset - 1) as usize)
+        //         .map(|(k, _)| k.clone())
+        // }
     }
     pub fn keys(&self) -> Vec<Pid> {
         self.content.keys().cloned().collect()
@@ -78,7 +86,7 @@ impl Doc {
         self.content.values().cloned().collect()
     }
     pub fn write_bytes_tobuf(&self, buf: &mut Vec<u8>) {
-        for (pid, ch) in &self.content {
+        for (pid, ch) in self.content.iter() {
             // encode char (UTF-8, variable length)
             let mut cbuf = [0u8; 4];
             let encoded = ch.encode_utf8(&mut cbuf);
@@ -93,7 +101,7 @@ impl Doc {
         }
     } 
     pub fn write_bytes<W: Write>(&self, writer: &mut W) -> Result<()> {
-        for (pid, ch) in &self.content {
+        for (pid, ch) in self.content.iter() {
             // Encode the char as UTF-8 (variable length)
             let mut cbuf = [0u8; 4];
             let encoded = ch.encode_utf8(&mut cbuf);
@@ -123,7 +131,7 @@ impl Doc {
     }
 
     pub fn from_reader<R: Read>(reader: &mut R, n: usize) -> Self {
-        let mut content = BTreeMap::new();
+        let mut content = IndexTreeMap::new();
 
         for _ in 0..n {
             let data_len = reader.read_u8().unwrap() as usize;
@@ -142,7 +150,7 @@ impl Doc {
         Doc { content }
     }
     pub fn from_reader_eof<R: Read>(reader: &mut R) -> Result<Self> {
-        let mut content = BTreeMap::new();
+        let mut content = IndexTreeMap::new();
 
         loop {
             let data_len = match reader.read_u8() {
