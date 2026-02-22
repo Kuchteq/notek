@@ -36,13 +36,18 @@ fn main() -> std::io::Result<()> {
     let (tx, rx) = mpsc::channel::<SessionMessage>();
 
     let mut d = Doc::new("Hello world! This app is the best thing ever!");
-    println!("{:#?}",d);
+    // println!("{:#?}",d);
+    let mut rope = ropey::Rope::from_str("Łukasz");
+
+    // rope.byte_to_char(byte_idx)
+    // return Ok(());
+
 
     thread::spawn(move || {
         handle_server_communication(rx);
     });
 
-                println!("{}",d.to_string());
+                // println!("{}",d.to_string());
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
