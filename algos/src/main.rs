@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, time::Instant};
+use std::{cmp::Ordering, collections::BTreeSet, time::Instant};
 
 use indextreemap::{IndexTreeMap, IndexTreeSet};
 use rand::{rng, seq::SliceRandom};
@@ -423,6 +423,41 @@ impl<K: Ord, V: Measured> Node<K, V> {
         child.size_alt -= succ_m;
         return child.keys.remove(0);
     }
+
+    fn get(&self, key: &K) -> Option<&(K,V)> {
+        let mut node = self;
+        loop {
+            match node.keys.binary_search_by(|(k, _)| k.cmp(&key)) {
+                Ok(pos) => return Some(&node.keys[pos]),
+                Err(pos) => {
+                    if node.is_leaf {
+                        return None
+                    }
+                    node = &node.children[pos];
+                }
+            }
+        }
+    }
+
+    fn get_by_index(&self, mut idx: usize) -> Option<&(K,V)> {
+        let mut node = self;
+        let mut i = 0;
+        if idx >= self.size {
+            return None
+        }
+        loop {
+            if node.is_leaf {
+                return Some(&node.keys[idx])
+            }
+
+            match idx.cmp(&node.children[i].size) {
+                Ordering::Less => { node = &node.children[i]; i = 0;}
+                Ordering::Equal => return Some(&node.keys[i]),
+                Ordering::Greater => {idx -= node.children[i].size + 1; i+=1}
+            }
+        }
+    }
+
     fn validate(&self, is_root: bool) {
         // Check key count bounds
         if !is_root {
@@ -664,6 +699,27 @@ fn main() {
 
     println!("std::BTreeSet size after deletion: {}", std_tree.len());
 
+
+    let mut my_tree_2: MarTree<usize, usize> = MarTree::default();
+
+    my_tree_2.insert(0, 0);
+    my_tree_2.insert(1, 0);
+    my_tree_2.insert(2, 0);
+    my_tree_2.insert(3, 0);
+    my_tree_2.insert(4, 0);
+    my_tree_2.insert(5, 0);
+    my_tree_2.insert(6, 0);
+    my_tree_2.insert(7, 0);
+    my_tree_2.insert(8, 0);
+    my_tree_2.insert(9, 0);
+    my_tree_2.insert(10, 0);
+    my_tree_2.insert(11, 0);
+    let t = my_tree_2.root.get_by_index(8);
+
+    println!("MarTree indexed by {:?}", t);
+    
+
+
     // // --- Benchmark deletion for indextreemap::indextree ---
     //
     // let start = Instant::now();
@@ -683,7 +739,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{rng, seq::SliceRandom, Rng};
+    use rand::{Rng, rng, seq::SliceRandom};
     use std::collections::BTreeMap;
 
     impl Measured for i64 {
