@@ -1,7 +1,6 @@
 use std::io::{Cursor, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use serde::{Deserialize, Serialize};
 
 use crate::{doc::Doc, pid::Pid};
 
@@ -24,7 +23,7 @@ impl PeerMessage {
                 // put site_id
                 buf.push(*site);
                 // put numberofatoms
-                buf.extend((doc.len() as u64).to_le_bytes());
+                buf.extend((doc.char_len() as u64).to_le_bytes());
                 doc.write_bytes_tobuf(&mut buf);
                 buf
             }

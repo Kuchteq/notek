@@ -87,7 +87,7 @@ impl SyncResponses<'_> {
                 w.write_all(name.as_bytes());
                 w.write_all(&[b'\n']);
                 // Number of insert atoms:
-                w.write_all(&(doc.len() as u64).to_le_bytes())?;
+                w.write_all(&(doc.char_len() as u64).to_le_bytes())?;
                 doc.write_bytes(&mut w)?;
                 // Number of delete atoms:
                 w.write_all(&(0 as u64).to_le_bytes())?;
