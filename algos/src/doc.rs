@@ -220,34 +220,35 @@ impl Doc {
         return new;
     }
 
-    pub fn insert_text_at_bytepos(&mut self, pos: usize, text: String) {
+    pub fn insert_text_at_bytepos(&mut self, pos: usize, text: String) -> Vec<(Pid, char)> {
         let mut pos = self.content.alt_to_index(pos);
+        // ik its in bytes but it's a good enough heuristic
+        let mut inserted = Vec::with_capacity(text.len());
         for c in text.chars() {
-            self.insert_at_idx(pos, DocChar(c));
+            inserted.push((self.insert_at_idx(pos, DocChar(c)), c));
             pos += 1;
         }
+        inserted
     }
 
     pub fn delete(&mut self, pid: &Pid) {
         self.content.remove(pid);
     }
 
-    pub fn delete_at_idx(&mut self, idx: usize) {
-        // This should have been a straightforward call to:
-        // self.content.remove_from_index(idx+1);
-
-        // but the library implements that incorectly and sooner or later the thing corrupts the
-        // tree and panics
-        let k = &self.content.get_by_index(idx + 1).unwrap().0;
+    pub fn delete_at_idx(&mut self, idx: usize) -> Pid {
         // TODO Avoid this clone by writing the function from scratch
-        self.content.remove(&k.clone());
+        let key = self.content.get_by_index(idx + 1).unwrap().0.clone();
+        self.content.remove(&key);
+        key
     }
-    pub fn delete_byte_range(&mut self, start_byte: usize, len_byte: usize) {
+    pub fn delete_byte_range(&mut self, start_byte: usize, len_byte: usize) -> Vec<Pid> {
         let start_idx = self.content.alt_to_index(start_byte);
         let end_idx = self.content.alt_to_index(start_byte+len_byte);
+        let mut deleted = Vec::with_capacity(end_idx-start_idx);
         for i in (start_idx..end_idx).rev() {
-            self.delete_at_idx(i);
+            deleted.push(self.delete_at_idx(i));
         }
+        deleted
     }
 
     pub fn to_string(&self) -> String {
