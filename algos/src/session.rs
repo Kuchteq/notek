@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{doc::Doc, pid::Pid};
 
-
-#[derive(Debug,  Clone)]
+#[derive(Debug, Clone)]
 pub enum SessionMessage {
     Start {
         document_id: u128,
@@ -23,7 +22,7 @@ pub enum SessionMessage {
         pid: Pid,
     },
     ChangeName {
-        name: String
+        name: String,
     },
     NewSession {
         site: u8,
@@ -35,39 +34,73 @@ impl SessionMessage {
     pub fn serialize(&self) -> Vec<u8> {
         match self {
             SessionMessage::Start {
-                        document_id,
-                        last_sync_time,
-                    } => vec![0u8],
+                document_id,
+                last_sync_time,
+            } => {
+                let mut buf = vec![64u8];
+                buf.extend(last_sync_time.to_le_bytes());
+                buf.extend(document_id.to_le_bytes());
+                buf
+            }
+
             SessionMessage::NewSession { site, doc } => {
-                        // put header i.e. PeerMessage enum it is
-                        let mut buf = vec![1u8];
-                        // put site_id
-                        buf.push(*site);
-                        // put numberofatoms
-                        buf.extend((doc.char_len() as u64).to_le_bytes());
-                        doc.write_bytes_tobuf(&mut buf);
-                        buf
-                    }
+                // Not present in deserialize; keep or remove depending on protocol usage.
+                let mut buf = vec![65u8];
+                buf.push(*site);
+
+                let char_len = doc.char_len();
+                buf.push(char_len as u8);
+
+                doc.write_bytes_tobuf(&mut buf);
+                buf
+            }
+
             SessionMessage::Insert { site, pid, c } => {
-                        let mut buf = vec![2u8];
-                        buf.push(*site);
-                        let mut cbuf = [0u8; 4];
-                        let encoded = c.encode_utf8(&mut cbuf);
-                        // put atom's data length
-                        buf.push(encoded.len() as u8);
-                        buf.extend(encoded.as_bytes());
-                        buf.push(pid.depth() as u8);
-                        pid.write_bytes(&mut buf);
-                        buf
-                    }
+                let mut buf = vec![65u8];
+
+                // site
+                buf.push(*site);
+
+                // encode character
+                let mut tmp = [0u8; 4];
+                let encoded = c.encode_utf8(&mut tmp).as_bytes();
+
+                // data length (must match deserialize read_u8)
+                buf.push(encoded.len() as u8);
+
+                // data bytes
+                buf.extend_from_slice(encoded);
+
+                // pid depth
+                buf.push(pid.depth() as u8);
+
+                // pid bytes
+                pid.write_bytes(&mut buf);
+
+                buf
+            }
+
             SessionMessage::Delete { site, pid } => {
-                        let mut buf = vec![3u8];
-                        buf.push(*site);
-                        buf.push(pid.depth() as u8);
-                        pid.write_bytes(&mut buf);
-                        buf
-                    }
-            SessionMessage::ChangeName { name } => todo!(),
+                let mut buf = vec![66u8];
+
+                buf.push(*site);
+
+                buf.push(pid.depth() as u8);
+
+                pid.write_bytes(&mut buf);
+
+                buf
+            }
+
+            SessionMessage::ChangeName { name } => {
+                let mut buf = vec![67u8];
+
+                // serialize name as UTF-8 bytes terminated by '\n'
+                buf.extend_from_slice(name.as_bytes());
+                buf.push(b'\n');
+
+                buf
+            }
         }
     }
     pub fn deserialize(buf: &[u8]) -> SessionMessage {
@@ -80,7 +113,7 @@ impl SessionMessage {
                     document_id,
                     last_sync_time,
                 }
-            },
+            }
             65u8 => {
                 let site = cur.read_u8().unwrap();
                 let data_len = cur.read_u8().unwrap() as usize;
@@ -111,7 +144,9 @@ impl SessionMessage {
             67u8 => {
                 let mut document_name = Vec::new();
                 cur.read_until(b'\n', &mut document_name);
-                SessionMessage::ChangeName { name: String::from_utf8(document_name).unwrap() }
+                SessionMessage::ChangeName {
+                    name: String::from_utf8(document_name).unwrap(),
+                }
             }
             68u8 => {
                 let site = cur.read_u8().unwrap();
