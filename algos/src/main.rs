@@ -424,14 +424,14 @@ impl<K: Ord, V: Measured> Node<K, V> {
         return child.keys.remove(0);
     }
 
-    fn get(&self, key: &K) -> Option<&(K,V)> {
+    fn get(&self, key: &K) -> Option<&(K, V)> {
         let mut node = self;
         loop {
             match node.keys.binary_search_by(|(k, _)| k.cmp(&key)) {
                 Ok(pos) => return Some(&node.keys[pos]),
                 Err(pos) => {
                     if node.is_leaf {
-                        return None
+                        return None;
                     }
                     node = &node.children[pos];
                 }
@@ -439,15 +439,15 @@ impl<K: Ord, V: Measured> Node<K, V> {
         }
     }
 
-    fn get_by_index(&self, mut idx: usize) -> Option<&(K,V)> {
+    fn get_by_index(&self, mut idx: usize) -> Option<&(K, V)> {
         let mut node = self;
         let mut i = 0;
         if idx >= self.size {
-            return None
+            return None;
         }
         loop {
             if node.is_leaf {
-                return Some(&node.keys[idx])
+                return Some(&node.keys[idx]);
             }
 
             match idx.cmp(&node.children[i].size) {
@@ -699,7 +699,6 @@ fn main() {
 
     println!("std::BTreeSet size after deletion: {}", std_tree.len());
 
-
     let mut my_tree_2: MarTree<usize, usize> = MarTree::default();
 
     my_tree_2.insert(0, 0);
@@ -714,11 +713,9 @@ fn main() {
     my_tree_2.insert(9, 0);
     my_tree_2.insert(10, 0);
     my_tree_2.insert(11, 0);
-    let t = my_tree_2.root.get_by_index(8);
+    let t = my_tree_2.root.get_by_alt_size(11);
 
     println!("MarTree indexed by {:?}", t);
-    
-
 
     // // --- Benchmark deletion for indextreemap::indextree ---
     //
@@ -739,7 +736,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{Rng, rng, seq::SliceRandom};
+    use rand::{rng, seq::SliceRandom, Rng};
     use std::collections::BTreeMap;
 
     impl Measured for i64 {
@@ -1506,5 +1503,256 @@ mod tests {
         let expected_bytes: usize = reference.values().map(|c| c.0.len_utf8()).sum();
         assert_eq!(tree.root.size, reference.len());
         assert_eq!(tree.root.size_alt, expected_bytes);
+    }
+
+    // -------------------------------------------------------
+    // get() tests
+    // -------------------------------------------------------
+
+    #[test]
+    fn get_empty_tree() {
+        let tree = new_tree();
+        assert!(tree.root.get(&0).is_none());
+        assert!(tree.root.get(&42).is_none());
+    }
+
+    #[test]
+    fn get_single_element() {
+        let mut tree = new_tree();
+        tree.insert(10, 100);
+        assert_eq!(tree.root.get(&10), Some(&(10, 100)));
+        assert!(tree.root.get(&9).is_none());
+        assert!(tree.root.get(&11).is_none());
+    }
+
+    #[test]
+    fn get_returns_updated_value_after_duplicate_insert() {
+        let mut tree = new_tree();
+        tree.insert(5, 50);
+        assert_eq!(tree.root.get(&5), Some(&(5, 50)));
+        tree.insert(5, 99);
+        assert_eq!(tree.root.get(&5), Some(&(5, 99)));
+    }
+
+    #[test]
+    fn get_after_removal() {
+        let mut tree = new_tree();
+        for i in 0..50 {
+            tree.insert(i, i * 10);
+        }
+        assert_eq!(tree.root.get(&25), Some(&(25, 250)));
+        tree.remove(&25);
+        assert!(tree.root.get(&25).is_none());
+        // Neighbors still there
+        assert_eq!(tree.root.get(&24), Some(&(24, 240)));
+        assert_eq!(tree.root.get(&26), Some(&(26, 260)));
+    }
+
+    #[test]
+    fn get_all_inserted_keys() {
+        let mut tree = new_tree();
+        for i in 0..200 {
+            tree.insert(i * 3, i);
+        }
+        tree.validate();
+        for i in 0..200 {
+            assert_eq!(tree.root.get(&(i * 3)), Some(&(i * 3, i)));
+        }
+        // Keys not inserted should be absent
+        for i in 0..200 {
+            let k = i * 3 + 1;
+            assert!(tree.root.get(&k).is_none(), "key {} should not exist", k);
+        }
+    }
+
+    #[test]
+    fn get_deep_tree() {
+        // Insert enough elements to create a multi-level tree
+        let mut tree = new_tree();
+        for i in 0..1000 {
+            tree.insert(i, i * 2);
+        }
+        tree.validate();
+        // Verify all keys
+        for i in 0..1000 {
+            assert_eq!(tree.root.get(&i), Some(&(i, i * 2)));
+        }
+        // Verify absent keys
+        assert!(tree.root.get(&1000).is_none());
+        assert!(tree.root.get(&-1).is_none());
+    }
+
+    // -------------------------------------------------------
+    // get_by_index() tests
+    // -------------------------------------------------------
+
+    #[test]
+    fn get_by_index_empty_tree() {
+        let tree = new_tree();
+        assert!(tree.root.get_by_index(0).is_none());
+        assert!(tree.root.get_by_index(1).is_none());
+    }
+
+    #[test]
+    fn get_by_index_single_element() {
+        let mut tree = new_tree();
+        tree.insert(42, 100);
+        assert_eq!(tree.root.get_by_index(0), Some(&(42, 100)));
+        assert!(tree.root.get_by_index(1).is_none());
+    }
+
+    #[test]
+    fn get_by_index_returns_sorted_order() {
+        let mut tree = new_tree();
+        // Insert in scrambled order
+        let keys = vec![50, 10, 30, 20, 40];
+        for &k in &keys {
+            tree.insert(k, k * 10);
+        }
+        tree.validate();
+        // get_by_index should return in sorted key order
+        assert_eq!(tree.root.get_by_index(0), Some(&(10, 100)));
+        assert_eq!(tree.root.get_by_index(1), Some(&(20, 200)));
+        assert_eq!(tree.root.get_by_index(2), Some(&(30, 300)));
+        assert_eq!(tree.root.get_by_index(3), Some(&(40, 400)));
+        assert_eq!(tree.root.get_by_index(4), Some(&(50, 500)));
+        assert!(tree.root.get_by_index(5).is_none());
+    }
+
+    #[test]
+    fn get_by_index_out_of_bounds() {
+        let mut tree = new_tree();
+        for i in 0..20 {
+            tree.insert(i, 0);
+        }
+        assert!(tree.root.get_by_index(20).is_none());
+        assert!(tree.root.get_by_index(100).is_none());
+        assert!(tree.root.get_by_index(usize::MAX).is_none());
+    }
+
+    #[test]
+    fn get_by_index_sequential_matches_sorted_keys() {
+        let mut tree = new_tree();
+        let mut rng = rng();
+        let mut keys: Vec<i64> = (0..500).collect();
+        keys.shuffle(&mut rng);
+        for &k in &keys {
+            tree.insert(k, k * 2);
+        }
+        tree.validate();
+
+        keys.sort();
+        for (idx, &k) in keys.iter().enumerate() {
+            let result = tree.root.get_by_index(idx);
+            assert_eq!(
+                result,
+                Some(&(k, k * 2)),
+                "index {} expected key {} but got {:?}",
+                idx,
+                k,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn get_by_index_after_removals() {
+        let mut tree = new_tree();
+        for i in 0..100i64 {
+            tree.insert(i, i);
+        }
+        // Remove even numbers
+        for i in (0..100i64).step_by(2) {
+            tree.remove(&i);
+        }
+        tree.validate();
+        // Remaining: 1, 3, 5, 7, ..., 99 (50 elements)
+        assert_eq!(tree.root.size, 50);
+        for idx in 0..50 {
+            let expected_key = (idx as i64) * 2 + 1;
+            assert_eq!(
+                tree.root.get_by_index(idx),
+                Some(&(expected_key, expected_key)),
+                "index {} should be key {}",
+                idx,
+                expected_key
+            );
+        }
+        assert!(tree.root.get_by_index(50).is_none());
+    }
+
+    #[test]
+    fn get_by_index_first_and_last() {
+        let mut tree = new_tree();
+        for i in 0..200i64 {
+            tree.insert(i * 5, i);
+        }
+        tree.validate();
+        // First element
+        assert_eq!(tree.root.get_by_index(0), Some(&(0, 0)));
+        // Last element
+        assert_eq!(tree.root.get_by_index(199), Some(&(995, 199)));
+    }
+
+    #[test]
+    fn get_by_index_stress_random_insert_remove() {
+        let mut tree = new_tree();
+        let mut reference: Vec<(i64, i64)> = Vec::new();
+        let mut rng = rng();
+
+        for _ in 0..5000 {
+            let key: i64 = rng.random_range(0..500);
+            if rng.random_bool(0.6) {
+                let val = rng.random_range(0..1000);
+                tree.insert(key, val);
+                // Update reference (sorted vec)
+                match reference.binary_search_by_key(&key, |&(k, _)| k) {
+                    Ok(pos) => reference[pos].1 = val,
+                    Err(pos) => reference.insert(pos, (key, val)),
+                }
+            } else {
+                tree.remove(&key);
+                if let Ok(pos) = reference.binary_search_by_key(&key, |&(k, _)| k) {
+                    reference.remove(pos);
+                }
+            }
+        }
+
+        tree.validate();
+        assert_eq!(tree.root.size, reference.len());
+
+        // Verify every index matches reference
+        for (idx, &(k, v)) in reference.iter().enumerate() {
+            assert_eq!(
+                tree.root.get_by_index(idx),
+                Some(&(k, v)),
+                "mismatch at index {}",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn get_and_get_by_index_consistent() {
+        // Verify that get_by_index and get agree: for every index,
+        // the returned key should also be found by get()
+        let mut tree = new_tree();
+        let mut rng = rng();
+        let mut keys: Vec<i64> = (0..300).collect();
+        keys.shuffle(&mut rng);
+        for &k in &keys {
+            tree.insert(k, k + 1000);
+        }
+        tree.validate();
+
+        for idx in 0..300 {
+            let by_index = tree.root.get_by_index(idx).unwrap();
+            let by_key = tree.root.get(&by_index.0).unwrap();
+            assert_eq!(
+                by_index, by_key,
+                "get_by_index({}) and get({}) disagree",
+                idx, by_index.0
+            );
+        }
     }
 }
