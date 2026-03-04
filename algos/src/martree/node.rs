@@ -14,7 +14,6 @@ where
     pub is_leaf: bool,
 }
 
-
 pub const T: usize = 6;
 
 impl<K: Ord, V: Measured> Default for Node<K, V> {
@@ -448,6 +447,46 @@ impl<K: Ord, V: Measured> Node<K, V> {
         }
     }
 
+    pub fn alt_to_index(&self, mut alt: usize) -> usize {
+        let mut node = self;
+        let mut i = 0;
+        let mut idx = 0;
+        if alt >= self.size_alt {
+            return self.size;
+        }
+        loop {
+            if node.is_leaf {
+                for entry in &node.keys {
+                    let m = entry.1.measured();
+                    if alt < m {
+                        return idx;
+                    }
+                    alt -= m;
+                    idx += 1;
+                }
+                unreachable!("alt offset should be within leaf");
+            }
+
+            let child_alt = node.children[i].size_alt;
+            if alt < child_alt {
+                // Target is inside children[i]
+                node = &node.children[i];
+                i = 0;
+            } else {
+                alt -= child_alt;
+                idx += node.children[i].size;
+                let key_m = node.keys[i].1.measured();
+                if alt < key_m {
+                    // Target falls within keys[i]
+                    return idx;
+                }
+                alt -= key_m;
+                idx += 1;
+                i += 1;
+            }
+        }
+    }
+
     pub fn get_by_index(&self, mut idx: usize) -> Option<&(K, V)> {
         let mut node = self;
         let mut i = 0;
@@ -610,5 +649,3 @@ impl<K: Ord, V: Measured> Node<K, V> {
         );
     }
 }
-
-
