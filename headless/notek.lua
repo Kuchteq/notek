@@ -1,4 +1,10 @@
 local bit = require("bit")
+function P(s)
+        local ss = vim.inspect(s)
+        print(ss)
+        vim.system({ "notify-send", ss}, { detach = true })
+end
+
 
 local function attach_to_buffer(bufnr)
         local uv = vim.uv
@@ -26,19 +32,18 @@ local function attach_to_buffer(bufnr)
                 )
         end
         -- delete: bit31 = 1
-        local function encode_delete(start_byte, end_byte)
+        local function encode_delete(start_byte, len)
                 local header = bit.bor(0x80000000, start_byte)
-                return u32_le(header) .. u32_le(end_byte)
+                return u32_le(header) .. u32_le(len)
         end
 
         -- insert: bit31 = 0
-        local function encode_insert(start_byte, end_byte, text)
+        local function encode_insert(start_byte, text)
                 local header = bit.band(start_byte, 0x7fffffff)
 
                 local len = #text
                 return u32_le(header)
-                    .. u32_le(end_byte)
-                    .. u16_le(len)
+                    .. u32_le(len)
                     .. text
         end
 
@@ -79,13 +84,16 @@ local function attach_to_buffer(bufnr)
                     new_end_col,
                     new_end_byte
                 )
-                        -- -------- DELETE EVENT --------
+                
+    -- P({"deleted", start_byte, start_byte + old_end_byte})
+    -- P({"inserted", start_byte, start_byte + new_end_byte, new_text})
+    -- return
+                        -------- DELETE EVENT --------
                         if old_end_byte > 0 then
-                                local delete_end = start_byte + old_end_byte
 
                                 send(encode_delete(
                                         start_byte,
-                                        delete_end
+                                        old_end_byte
                                 ))
                         end
 
@@ -107,7 +115,6 @@ local function attach_to_buffer(bufnr)
 
                                 send(encode_insert(
                                         start_byte,
-                                        insert_end,
                                         text
                                 ))
                         end
