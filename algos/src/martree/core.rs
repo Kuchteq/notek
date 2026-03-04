@@ -1,10 +1,8 @@
 use crate::martree::node::{Node, T};
 
-
 pub trait Measured {
     fn measured(&self) -> usize;
 }
-
 
 #[derive(Debug, Clone)]
 pub struct MarTree<K, V>
@@ -17,11 +15,10 @@ where
 impl<K: Ord, V: Measured> Default for MarTree<K, V> {
     fn default() -> Self {
         MarTree {
-            root: Node::default()
+            root: Node::default(),
         }
     }
 }
-
 
 impl<K: Ord, V: Measured> MarTree<K, V> {
     pub fn insert(&mut self, key: K, value: V) {
@@ -56,7 +53,7 @@ impl<K: Ord, V: Measured> MarTree<K, V> {
     pub fn get(&self, key: &K) -> Option<&(K, V)> {
         self.root.get(key)
     }
-    
+
     pub fn get_next(&self, key: &K) -> Option<&(K, V)> {
         self.root.get_next(key)
     }
@@ -67,6 +64,11 @@ impl<K: Ord, V: Measured> MarTree<K, V> {
     pub fn get_by_alt_size(&self, alt: usize) -> Option<&(K, V)> {
         self.root.get_by_alt_size(alt)
     }
+
+    pub fn alt_to_index(&self, alt: usize) -> usize {
+        self.root.alt_to_index(alt)
+    }
+
     pub fn size(&self) -> usize {
         return self.root.size;
     }
@@ -93,15 +95,12 @@ where
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
     use crate::martree::core::MarTree;
 
     use super::*;
-    use rand::{Rng, rng, seq::SliceRandom};
+    use rand::{rng, seq::SliceRandom, Rng};
     use std::collections::BTreeMap;
 
     impl Measured for i64 {
@@ -1316,7 +1315,7 @@ mod tests {
                     start + offset
                 );
                 assert_eq!(
-                    result.unwrap().1.0,
+                    result.unwrap().1 .0,
                     ch.0,
                     "alt {} should be '{}'",
                     start + offset,
@@ -1382,6 +1381,317 @@ mod tests {
             alt += m;
         }
         assert!(tree.root.get_by_alt_size(alt).is_none());
+    }
+
+    // -------------------------------------------------------
+    // alt_to_index() tests
+    // -------------------------------------------------------
+
+    #[test]
+    fn alt_to_index_empty_tree() {
+        let tree = new_tree();
+        // Past the end → returns size (0)
+        assert_eq!(tree.alt_to_index(0), 0);
+        assert_eq!(tree.alt_to_index(1), 0);
+    }
+
+    #[test]
+    fn alt_to_index_single_element() {
+        let mut tree = new_tree();
+        tree.insert(10, 5); // measured=5, alt offsets [0..5)
+                            // Any alt in [0..5) should map to index 0
+        for alt in 0..5 {
+            assert_eq!(
+                tree.alt_to_index(alt),
+                0,
+                "alt {} should map to index 0",
+                alt
+            );
+        }
+        // Past the end
+        assert_eq!(tree.alt_to_index(5), 1);
+        assert_eq!(tree.alt_to_index(100), 1);
+    }
+
+    #[test]
+    fn alt_to_index_two_elements() {
+        let mut tree = new_tree();
+        tree.insert(1, 3); // measured=3, alt [0,1,2)  → index 0
+        tree.insert(2, 7); // measured=7, alt [3..10)  → index 1
+        tree.validate();
+
+        for alt in 0..3 {
+            assert_eq!(tree.alt_to_index(alt), 0, "alt {} should be index 0", alt);
+        }
+        for alt in 3..10 {
+            assert_eq!(tree.alt_to_index(alt), 1, "alt {} should be index 1", alt);
+        }
+        assert_eq!(tree.alt_to_index(10), 2); // past the end
+    }
+
+    #[test]
+    fn alt_to_index_boundaries_between_entries() {
+        let mut tree = new_tree();
+        tree.insert(1, 3); // alt [0,1,2)       → index 0
+        tree.insert(2, 5); // alt [3,4,5,6,7)   → index 1
+        tree.insert(3, 2); // alt [8,9)          → index 2
+
+        // Last offset of entry 0
+        assert_eq!(tree.alt_to_index(2), 0);
+        // First offset of entry 1
+        assert_eq!(tree.alt_to_index(3), 1);
+        // Last offset of entry 1
+        assert_eq!(tree.alt_to_index(7), 1);
+        // First offset of entry 2
+        assert_eq!(tree.alt_to_index(8), 2);
+        // Last offset of entry 2
+        assert_eq!(tree.alt_to_index(9), 2);
+        // Past end
+        assert_eq!(tree.alt_to_index(10), 3);
+    }
+
+    #[test]
+    fn alt_to_index_consistent_with_get_by_alt_size() {
+        // For every valid alt offset, alt_to_index should return the same
+        // index as get_by_index would give for that entry's key.
+        let mut tree = new_tree();
+        let mut rng = rng();
+        let n = 300;
+        let mut keys: Vec<i64> = (0..n).collect();
+        keys.shuffle(&mut rng);
+        for &k in &keys {
+            tree.insert(k, (k % 7 + 1).abs()); // measured in [1..8]
+        }
+        tree.validate();
+
+        // Build a reference: sorted entries with cumulative alt offsets
+        keys.sort();
+        let mut ref_entries: Vec<(i64, i64)> = Vec::new();
+        for &k in &keys {
+            let entry = tree.get(&k).unwrap();
+            ref_entries.push(*entry);
+        }
+
+        let mut alt = 0usize;
+        for (idx, &(_k, v)) in ref_entries.iter().enumerate() {
+            let m = v.unsigned_abs() as usize;
+            // Every alt offset within this entry should map to `idx`
+            assert_eq!(
+                tree.alt_to_index(alt),
+                idx,
+                "start of entry {} (alt={})",
+                idx,
+                alt
+            );
+            if m > 1 {
+                assert_eq!(
+                    tree.alt_to_index(alt + m - 1),
+                    idx,
+                    "end of entry {} (alt={})",
+                    idx,
+                    alt + m - 1
+                );
+            }
+            alt += m;
+        }
+        // Past end
+        assert_eq!(tree.alt_to_index(alt), ref_entries.len());
+    }
+
+    #[test]
+    fn alt_to_index_uniform_measured_equals_identity() {
+        // When all entries have measured()=1, alt_to_index(n) == n
+        let mut tree = new_tree();
+        for i in 0..200i64 {
+            tree.insert(i, 1); // measured=1
+        }
+        tree.validate();
+        for alt in 0..200 {
+            assert_eq!(
+                tree.alt_to_index(alt),
+                alt,
+                "with uniform measured=1, alt_to_index({}) should be {}",
+                alt,
+                alt
+            );
+        }
+        assert_eq!(tree.alt_to_index(200), 200);
+    }
+
+    #[test]
+    fn alt_to_index_after_removals() {
+        let mut tree = new_tree();
+        for i in 0..100i64 {
+            tree.insert(i, i + 1); // measured = i+1
+        }
+        // Remove even keys
+        for i in (0..100i64).step_by(2) {
+            tree.remove(&i);
+        }
+        tree.validate();
+
+        // Remaining: 1,3,5,...,99 with measured = 2,4,6,...,100
+        let remaining: Vec<(i64, i64)> = (0..100i64)
+            .filter(|i| i % 2 != 0)
+            .map(|i| (i, i + 1))
+            .collect();
+
+        let mut alt = 0usize;
+        for (idx, &(_k, v)) in remaining.iter().enumerate() {
+            let m = v.unsigned_abs() as usize;
+            assert_eq!(
+                tree.alt_to_index(alt),
+                idx,
+                "after removals, alt {} should be index {}",
+                alt,
+                idx
+            );
+            alt += m;
+        }
+        assert_eq!(tree.alt_to_index(alt), remaining.len());
+    }
+
+    #[test]
+    fn alt_to_index_deep_tree() {
+        // Build a large tree to ensure multi-level traversal works
+        let mut tree = new_tree();
+        let mut rng = rng();
+        let n = 1000i64;
+        let mut keys: Vec<i64> = (0..n).collect();
+        keys.shuffle(&mut rng);
+        for &k in &keys {
+            tree.insert(k, (k % 5 + 1).abs()); // measured in [1..6]
+        }
+        tree.validate();
+
+        // Build reference sorted by key
+        keys.sort();
+        let mut alt = 0usize;
+        for (idx, &k) in keys.iter().enumerate() {
+            let entry = tree.get(&k).unwrap();
+            let m = entry.1.unsigned_abs() as usize;
+            assert_eq!(
+                tree.alt_to_index(alt),
+                idx,
+                "deep tree: alt {} should be index {}",
+                alt,
+                idx
+            );
+            alt += m;
+        }
+        assert_eq!(tree.alt_to_index(alt), keys.len());
+    }
+
+    #[test]
+    fn alt_to_index_matches_get_by_alt_size_entry() {
+        // Verify: tree.get_by_index(tree.alt_to_index(alt)) == tree.get_by_alt_size(alt)
+        let mut tree = new_tree();
+        let entries: Vec<(i64, i64)> = vec![(0, 2), (1, 5), (2, 1), (3, 3), (4, 4)];
+        for &(k, v) in &entries {
+            tree.insert(k, v);
+        }
+        tree.validate();
+
+        let total_alt = tree.size_alt();
+        for alt in 0..total_alt {
+            let idx = tree.alt_to_index(alt);
+            let by_index = tree.get_by_index(idx);
+            let by_alt = tree.get_by_alt_size(alt);
+            assert_eq!(
+                by_index, by_alt,
+                "alt={}: get_by_index({}) = {:?}, get_by_alt_size = {:?}",
+                alt, idx, by_index, by_alt
+            );
+        }
+    }
+
+    #[test]
+    fn alt_to_index_stress_random() {
+        let mut tree = new_tree();
+        let mut reference: Vec<(i64, i64)> = Vec::new();
+        let mut rng = rng();
+
+        for _ in 0..3000 {
+            let key: i64 = rng.random_range(0..500);
+            if rng.random_bool(0.65) {
+                let val: i64 = rng.random_range(1..10);
+                tree.insert(key, val);
+                match reference.binary_search_by_key(&key, |&(k, _)| k) {
+                    Ok(pos) => reference[pos].1 = val,
+                    Err(pos) => reference.insert(pos, (key, val)),
+                }
+            } else {
+                tree.remove(&key);
+                if let Ok(pos) = reference.binary_search_by_key(&key, |&(k, _)| k) {
+                    reference.remove(pos);
+                }
+            }
+        }
+
+        tree.validate();
+
+        // Verify every alt offset maps to the correct index
+        let mut alt = 0usize;
+        for (idx, &(_k, v)) in reference.iter().enumerate() {
+            let m = v.unsigned_abs() as usize;
+            assert_eq!(
+                tree.alt_to_index(alt),
+                idx,
+                "stress: alt {} should be index {}",
+                alt,
+                idx
+            );
+            if m > 1 {
+                assert_eq!(
+                    tree.alt_to_index(alt + m - 1),
+                    idx,
+                    "stress: alt {} (end) should be index {}",
+                    alt + m - 1,
+                    idx
+                );
+            }
+            alt += m;
+        }
+        assert_eq!(tree.alt_to_index(alt), reference.len());
+    }
+
+    #[test]
+    fn alt_to_index_char_tree_byte_offsets() {
+        let mut tree: MarTree<usize, Char> = MarTree::default();
+        let text = "aé中🌍b";
+        let chars: Vec<char> = text.chars().collect();
+        // 'a'=1byte, 'é'=2bytes, '中'=3bytes, '🌍'=4bytes, 'b'=1byte
+        for (i, &ch) in chars.iter().enumerate() {
+            tree.insert(i, Char(ch));
+        }
+        tree.validate();
+
+        // Expected: byte offset → char index
+        // [0)       → index 0 ('a')
+        // [1,2)     → index 1 ('é')
+        // [3,4,5)   → index 2 ('中')
+        // [6,7,8,9) → index 3 ('🌍')
+        // [10)      → index 4 ('b')
+        let expected: Vec<(usize, usize, usize)> = vec![
+            // (start_byte, width, expected_index)
+            (0, 1, 0),
+            (1, 2, 1),
+            (3, 3, 2),
+            (6, 4, 3),
+            (10, 1, 4),
+        ];
+        for (start, width, exp_idx) in &expected {
+            for offset in 0..*width {
+                assert_eq!(
+                    tree.alt_to_index(start + offset),
+                    *exp_idx,
+                    "byte offset {} should map to char index {}",
+                    start + offset,
+                    exp_idx
+                );
+            }
+        }
+        assert_eq!(tree.alt_to_index(11), 5); // past end
     }
 
     #[test]
