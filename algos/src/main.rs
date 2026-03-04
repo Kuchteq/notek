@@ -472,23 +472,30 @@ impl<K: Ord, V: Measured> Node<K, V> {
         }
         loop {
             if node.is_leaf {
-                while alt > 0 {
-                    alt -= node.keys[i].1.measured();
-                    i+=1;
-                } 
-                return Some(&node.keys[i])
+                for entry in &node.keys {
+                    let m = entry.1.measured();
+                    if alt < m {
+                        return Some(entry);
+                    }
+                    alt -= m;
+                }
+                unreachable!("alt offset should be within leaf");
             }
 
-            match alt.cmp(&node.children[i].size_alt) {
-                Ordering::Less => {
-                    node = &node.children[i];
-                    i = 0;
+            let child_alt = node.children[i].size_alt;
+            if alt < child_alt {
+                // Target is inside children[i]
+                node = &node.children[i];
+                i = 0;
+            } else {
+                alt -= child_alt;
+                let key_m = node.keys[i].1.measured();
+                if alt < key_m {
+                    // Target falls within keys[i]
+                    return Some(&node.keys[i]);
                 }
-                Ordering::Equal => return Some(&node.keys[i]),
-                Ordering::Greater => {
-                    alt -= node.children[i].size + node.keys[i].1.measured();
-                    i += 1
-                }
+                alt -= key_m;
+                i += 1;
             }
         }
     }
@@ -1789,5 +1796,339 @@ mod tests {
                 idx, by_index.0
             );
         }
+    }
+
+    // -------------------------------------------------------
+    // get_by_alt_size() tests
+    // -------------------------------------------------------
+
+    #[test]
+    fn get_by_alt_size_empty_tree() {
+        let tree = new_tree();
+        assert!(tree.root.get_by_alt_size(0).is_none());
+        assert!(tree.root.get_by_alt_size(1).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_single_element() {
+        let mut tree = new_tree();
+        tree.insert(10, 5); // measured() = 5, occupies alt offsets [0..5)
+        assert_eq!(tree.root.get_by_alt_size(0), Some(&(10, 5)));
+        assert_eq!(tree.root.get_by_alt_size(4), Some(&(10, 5)));
+        assert!(tree.root.get_by_alt_size(5).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_two_elements_varying_width() {
+        let mut tree = new_tree();
+        // key=1, value=3 → measured=3, alt offsets [0,1,2)
+        // key=2, value=7 → measured=7, alt offsets [3,4,5,6,7,8,9)
+        tree.insert(1, 3);
+        tree.insert(2, 7);
+        tree.validate();
+
+        for alt in 0..3 {
+            assert_eq!(
+                tree.root.get_by_alt_size(alt),
+                Some(&(1, 3)),
+                "alt {} should map to key 1",
+                alt
+            );
+        }
+        for alt in 3..10 {
+            assert_eq!(
+                tree.root.get_by_alt_size(alt),
+                Some(&(2, 7)),
+                "alt {} should map to key 2",
+                alt
+            );
+        }
+        assert!(tree.root.get_by_alt_size(10).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_out_of_bounds() {
+        let mut tree = new_tree();
+        for i in 1..=20i64 {
+            tree.insert(i, i); // measured = abs(i) = i
+        }
+        let total_alt: usize = (1..=20).sum::<usize>(); // 210
+        assert_eq!(tree.root.size_alt, total_alt);
+        assert!(tree.root.get_by_alt_size(total_alt).is_none());
+        assert!(tree.root.get_by_alt_size(total_alt + 100).is_none());
+        assert!(tree.root.get_by_alt_size(usize::MAX).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_uniform_width_matches_get_by_index() {
+        // When all values have measured() = 1, get_by_alt_size(n)
+        // should equal get_by_index(n)
+        let mut tree = new_tree();
+        for i in 0..200i64 {
+            tree.insert(i, 1); // measured = 1
+        }
+        tree.validate();
+        for idx in 0..200 {
+            assert_eq!(
+                tree.root.get_by_alt_size(idx),
+                tree.root.get_by_index(idx),
+                "with uniform measured=1, alt_size({}) should equal by_index({})",
+                idx,
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn get_by_alt_size_sequential_scan() {
+        // Insert keys with varying measured values,
+        // then verify every alt offset maps to the correct entry.
+        let mut tree = new_tree();
+        let entries: Vec<(i64, i64)> = vec![
+            (0, 2), // measured=2, alt [0,1)
+            (1, 5), // measured=5, alt [2,3,4,5,6)
+            (2, 1), // measured=1, alt [7)
+            (3, 3), // measured=3, alt [8,9,10)
+            (4, 4), // measured=4, alt [11,12,13,14)
+        ];
+        for &(k, v) in &entries {
+            tree.insert(k, v);
+        }
+        tree.validate();
+        assert_eq!(tree.root.size_alt, 15);
+
+        // Build expected mapping: alt_offset -> (key, value)
+        let mut expected: Vec<&(i64, i64)> = Vec::new();
+        for entry in &entries {
+            for _ in 0..entry.1.unsigned_abs() {
+                expected.push(entry);
+            }
+        }
+
+        for (alt, &exp) in expected.iter().enumerate() {
+            assert_eq!(
+                tree.root.get_by_alt_size(alt),
+                Some(exp),
+                "alt {} expected {:?}",
+                alt,
+                exp
+            );
+        }
+    }
+
+    #[test]
+    fn get_by_alt_size_after_removal() {
+        let mut tree = new_tree();
+        // Insert keys 0..50 with measured = key+1 (so no zeros)
+        for i in 0..50i64 {
+            tree.insert(i, i + 1);
+        }
+        // Remove every other key
+        for i in (0..50i64).step_by(2) {
+            tree.remove(&i);
+        }
+        tree.validate();
+
+        // Build reference: remaining entries sorted by key
+        let remaining: Vec<(i64, i64)> = (0..50i64)
+            .filter(|i| i % 2 != 0)
+            .map(|i| (i, i + 1))
+            .collect();
+        let total_alt: usize = remaining
+            .iter()
+            .map(|(_, v)| v.unsigned_abs() as usize)
+            .sum();
+        assert_eq!(tree.root.size_alt, total_alt);
+
+        // Scan all alt offsets
+        let mut alt = 0;
+        for &(k, v) in &remaining {
+            let m = v.unsigned_abs() as usize;
+            for offset in 0..m {
+                assert_eq!(
+                    tree.root.get_by_alt_size(alt + offset),
+                    Some(&(k, v)),
+                    "alt {} should be key {}",
+                    alt + offset,
+                    k
+                );
+            }
+            alt += m;
+        }
+        assert!(tree.root.get_by_alt_size(alt).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_char_tree_byte_offsets() {
+        // Use the Char type where measured() = len_utf8()
+        let mut tree: MarTree<usize, Char> = MarTree::default();
+        let text = "aé中🌍b";
+        let chars: Vec<char> = text.chars().collect();
+        // 'a'=1byte, 'é'=2bytes, '中'=3bytes, '🌍'=4bytes, 'b'=1byte
+        for (i, &ch) in chars.iter().enumerate() {
+            tree.insert(i, Char(ch));
+        }
+        tree.validate();
+        assert_eq!(tree.root.size_alt, text.len()); // 1+2+3+4+1=11
+
+        // alt offsets:
+        // [0)       -> 'a'   (key=0)
+        // [1,2)     -> 'é'   (key=1)
+        // [3,4,5)   -> '中'  (key=2)
+        // [6,7,8,9) -> '🌍' (key=3)
+        // [10)      -> 'b'   (key=4)
+        let expected: Vec<(usize, usize, Char)> = vec![
+            (0, 1, Char('a')),
+            (1, 2, Char('é')),
+            (3, 3, Char('中')),
+            (6, 4, Char('🌍')),
+            (10, 1, Char('b')),
+        ];
+        for (start, width, ch) in &expected {
+            for offset in 0..*width {
+                let result = tree.root.get_by_alt_size(start + offset);
+                assert!(
+                    result.is_some(),
+                    "alt {} should find a char",
+                    start + offset
+                );
+                assert_eq!(
+                    result.unwrap().1 .0,
+                    ch.0,
+                    "alt {} should be '{}'",
+                    start + offset,
+                    ch.0
+                );
+            }
+        }
+        assert!(tree.root.get_by_alt_size(11).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_stress_random() {
+        let mut tree = new_tree();
+        let mut reference: Vec<(i64, i64)> = Vec::new();
+        let mut rng = rng();
+
+        // Insert random entries with non-zero measured values
+        for _ in 0..2000 {
+            let key: i64 = rng.random_range(0..500);
+            let val: i64 = rng.random_range(1..10); // 1..10 so measured() >= 1
+            if rng.random_bool(0.7) {
+                tree.insert(key, val);
+                match reference.binary_search_by_key(&key, |&(k, _)| k) {
+                    Ok(pos) => reference[pos].1 = val,
+                    Err(pos) => reference.insert(pos, (key, val)),
+                }
+            } else {
+                tree.remove(&key);
+                if let Ok(pos) = reference.binary_search_by_key(&key, |&(k, _)| k) {
+                    reference.remove(pos);
+                }
+            }
+        }
+
+        tree.validate();
+        let total_alt: usize = reference
+            .iter()
+            .map(|(_, v)| v.unsigned_abs() as usize)
+            .sum();
+        assert_eq!(tree.root.size_alt, total_alt);
+
+        // Verify every alt offset maps to the correct entry
+        let mut alt = 0usize;
+        for &(k, v) in &reference {
+            let m = v.unsigned_abs() as usize;
+            // Check first and last offset within this entry's range
+            assert_eq!(
+                tree.root.get_by_alt_size(alt),
+                Some(&(k, v)),
+                "alt {} (start of key {}) mismatch",
+                alt,
+                k
+            );
+            if m > 1 {
+                assert_eq!(
+                    tree.root.get_by_alt_size(alt + m - 1),
+                    Some(&(k, v)),
+                    "alt {} (end of key {}) mismatch",
+                    alt + m - 1,
+                    k
+                );
+            }
+            alt += m;
+        }
+        assert!(tree.root.get_by_alt_size(alt).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_char_tree_stress() {
+        let mut tree: MarTree<usize, Char> = MarTree::default();
+        let mut reference: BTreeMap<usize, Char> = BTreeMap::new();
+        let mut rng = rng();
+
+        let char_pool: Vec<char> = vec![
+            'a', 'z', // 1 byte
+            'é', 'ñ', // 2 bytes
+            '中', '日', // 3 bytes
+            '🌍', '🚀', // 4 bytes
+        ];
+
+        for _ in 0..3000 {
+            let key: usize = rng.random_range(0..300);
+            if rng.random_bool(0.65) {
+                let ch = char_pool[rng.random_range(0..char_pool.len())];
+                tree.insert(key, Char(ch));
+                reference.insert(key, Char(ch));
+            } else {
+                tree.remove(&key);
+                reference.remove(&key);
+            }
+        }
+
+        tree.validate();
+        let total_bytes: usize = reference.values().map(|c| c.0.len_utf8()).sum();
+        assert_eq!(tree.root.size_alt, total_bytes);
+
+        // Verify alt offsets
+        let entries: Vec<(usize, Char)> = reference.into_iter().collect();
+        let mut alt = 0usize;
+        for &(k, ref ch) in &entries {
+            let m = ch.0.len_utf8();
+            for offset in 0..m {
+                let result = tree.root.get_by_alt_size(alt + offset);
+                assert_eq!(
+                    result.map(|e| e.0),
+                    Some(k),
+                    "byte offset {} should map to key {}",
+                    alt + offset,
+                    k
+                );
+            }
+            alt += m;
+        }
+        assert!(tree.root.get_by_alt_size(alt).is_none());
+    }
+
+    #[test]
+    fn get_by_alt_size_boundary_between_entries() {
+        // Specifically test the boundary where one entry ends and the next begins
+        let mut tree = new_tree();
+        tree.insert(1, 3); // alt [0,1,2)
+        tree.insert(2, 5); // alt [3,4,5,6,7)
+        tree.insert(3, 2); // alt [8,9)
+
+        // Last offset of entry 1
+        assert_eq!(tree.root.get_by_alt_size(2), Some(&(1, 3)));
+        // First offset of entry 2
+        assert_eq!(tree.root.get_by_alt_size(3), Some(&(2, 5)));
+        // Last offset of entry 2
+        assert_eq!(tree.root.get_by_alt_size(7), Some(&(2, 5)));
+        // First offset of entry 3
+        assert_eq!(tree.root.get_by_alt_size(8), Some(&(3, 2)));
+        // Last offset of entry 3
+        assert_eq!(tree.root.get_by_alt_size(9), Some(&(3, 2)));
+        // Past the end
+        assert!(tree.root.get_by_alt_size(10).is_none());
     }
 }
