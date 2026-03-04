@@ -451,9 +451,44 @@ impl<K: Ord, V: Measured> Node<K, V> {
             }
 
             match idx.cmp(&node.children[i].size) {
-                Ordering::Less => { node = &node.children[i]; i = 0;}
+                Ordering::Less => {
+                    node = &node.children[i];
+                    i = 0;
+                }
                 Ordering::Equal => return Some(&node.keys[i]),
-                Ordering::Greater => {idx -= node.children[i].size + 1; i+=1}
+                Ordering::Greater => {
+                    idx -= node.children[i].size + 1;
+                    i += 1
+                }
+            }
+        }
+    }
+
+    fn get_by_alt_size(&self, mut alt: usize) -> Option<&(K, V)> {
+        let mut node = self;
+        let mut i = 0;
+        if alt >= self.size_alt {
+            return None;
+        }
+        loop {
+            if node.is_leaf {
+                while alt > 0 {
+                    alt -= node.keys[i].1.measured();
+                    i+=1;
+                } 
+                return Some(&node.keys[i])
+            }
+
+            match alt.cmp(&node.children[i].size_alt) {
+                Ordering::Less => {
+                    node = &node.children[i];
+                    i = 0;
+                }
+                Ordering::Equal => return Some(&node.keys[i]),
+                Ordering::Greater => {
+                    alt -= node.children[i].size + node.keys[i].1.measured();
+                    i += 1
+                }
             }
         }
     }
