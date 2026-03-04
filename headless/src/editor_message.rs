@@ -4,8 +4,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 #[derive(Debug)]
 pub enum EditorMessage {
-    Insert(u32, char),
-    Delete(u32),
+    Insert(u32, String),
+    Delete(u32, u32),
 }
 
 impl EditorMessage {
@@ -14,32 +14,14 @@ impl EditorMessage {
 
         let op = (v >> 31) & 1;
         let index = v & 0x7FFF_FFFF;
-
+        let len = reader.read_u32::<LittleEndian>()?;
         if op == 0 {
-            let c = reader.read_u32::<LittleEndian>()?;
-            let ch = char::from_u32(c)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid char"))?;
-            Ok(EditorMessage::Insert(index, ch))
+            let mut buf = vec![0u8; len as usize];
+            reader.read_exact(&mut buf)?;
+            let text = String::from_utf8(buf).unwrap();
+            Ok(EditorMessage::Insert(index, text))
         } else {
-            Ok(EditorMessage::Delete(index))
+            Ok(EditorMessage::Delete(index, len))
         }
-    }
-
-    pub fn deserialize_all<R: Read>(mut reader: R) -> io::Result<Vec<Self>> {
-        let mut messages = Vec::new();
-
-        loop {
-            match Self::deserialize(&mut reader) {
-                Ok(msg) => messages.push(msg),
-
-                Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                    break;
-                }
-
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok(messages)
     }
 }

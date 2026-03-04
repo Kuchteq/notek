@@ -17,7 +17,7 @@ use crate::{
 
 /// A wrapper around char that measures its UTF-8 byte length.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DocChar(char);
+pub struct DocChar(pub char);
 
 #[derive(Debug, Clone)]
 pub struct Doc {
@@ -212,10 +212,26 @@ impl Doc {
         self.content.insert(new.clone(), c);
         return new;
     }
+    pub fn insert_at_bytepos(&mut self, pos: usize, c: DocChar) -> Pid {
+        let left = &self.content.get_by_alt_size(pos).unwrap().0;
+        let right = &self.content.get_next(left).unwrap().0;
+        let new = generate_between_pids(left, right, 1);
+        self.content.insert(new.clone(), c);
+        return new;
+    }
+
+    pub fn insert_text_at_bytepos(&mut self, pos: usize, text: String) {
+        let mut pos = self.content.alt_to_index(pos);
+        for c in text.chars() {
+            self.insert_at_idx(pos, DocChar(c));
+            pos += 1;
+        }
+    }
 
     pub fn delete(&mut self, pid: &Pid) {
         self.content.remove(pid);
     }
+
     pub fn delete_at_idx(&mut self, idx: usize) {
         // This should have been a straightforward call to:
         // self.content.remove_from_index(idx+1);
@@ -223,7 +239,15 @@ impl Doc {
         // but the library implements that incorectly and sooner or later the thing corrupts the
         // tree and panics
         let k = &self.content.get_by_index(idx + 1).unwrap().0;
+        // TODO Avoid this clone by writing the function from scratch
         self.content.remove(&k.clone());
+    }
+    pub fn delete_byte_range(&mut self, start_byte: usize, len_byte: usize) {
+        let start_idx = self.content.alt_to_index(start_byte);
+        let end_idx = self.content.alt_to_index(start_byte+len_byte);
+        for i in (start_idx..end_idx).rev() {
+            self.delete_at_idx(i);
+        }
     }
 
     pub fn to_string(&self) -> String {
@@ -232,6 +256,13 @@ impl Doc {
             .iter()
             .skip(1)
             .take(self.char_len().saturating_sub(2))
+            .map(|(_, v)| v.0)
+            .collect::<String>()
+    }
+    pub fn to_abs_string(&self) -> String {
+        // self.content.iter().map(|(_,v)| v.0).collect()[1..self.char_len() - 1]
+        self.content
+            .iter()
             .map(|(_, v)| v.0)
             .collect::<String>()
     }

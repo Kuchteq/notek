@@ -14,8 +14,7 @@ The client then takes that information, transforms the local indeces to CRDT one
 The idea of this client is to provide a process that handles the editor's buffer copy as well as Notek's CRDT book-keeping and server communication and let actual editors handle the text editing.
 The editor connects to the client over a unix socket and all it does is send a **byte-level** diff with this custom binary format whose positions then get translated to atom level diffs:
 - ⎧ u32 1 bit for marking if the edit is a delete (1) or an insert (0) and the rest 31 bits for the starting index.
-- | u32 ending index
-- | u16 (optional), if the previous first bit is a 0), length of the inserted text
+- | u32 length of the inserted text or in case of delete (leading bit 1) length of the delete
 - ⎩ [u8] (optional, if the previous first bit is a 0), inserted text
 
 

@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use algos::{doc::Doc, sync::{DocOp, DocSyncInfo, SyncResponses}};
+use algos::{doc::{Doc, DocChar}, sync::{DocOp, DocSyncInfo, SyncResponses}};
 use anyhow::{Result, anyhow};
 use byteorder::{LittleEndian, ReadBytesExt};
 use tokio::sync::{mpsc, oneshot};
@@ -207,7 +207,7 @@ impl DocStructure {
         match &mut self.state {
             DocState::Missing => {} // TODO self.load_state().unwrap(),
             DocState::Cached(doc) => match op {
-                DocOp::Insert(pid, c) => doc.insert(pid, c),
+                DocOp::Insert(pid, c) => doc.insert(pid, DocChar(c)),
                 DocOp::Delete(pid) => doc.delete(&pid),
             },
         }
@@ -243,7 +243,7 @@ impl DocStructure {
         if let DocState::Cached(doc) = &self.state {
             doc.write_bytes(&mut writer);
             let human_readable_path = format!("{}.md", self.name);
-            let human_readable = &String::from_iter(doc.values().iter())[1..doc.len() - 1];
+            let human_readable = doc.to_string();
             std::fs::write(human_readable_path, human_readable);
         }
         writer.flush();

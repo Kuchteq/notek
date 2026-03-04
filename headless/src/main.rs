@@ -1,28 +1,27 @@
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
-use std::io::{Read, Write};
-use std::{fs, thread};
 use std::sync::mpsc;
+use std::{fs, thread};
 
 use algos::doc::Doc;
 use algos::session::SessionMessage;
-use tungstenite::{connect, Message};
+use tungstenite::{Message, connect};
 
 use crate::editor_message::EditorMessage;
+use crate::local_doc::LocalDoc;
 
 mod editor_message;
+mod local_doc;
 
-fn handle_server_communication (rx: mpsc::Receiver<SessionMessage>) {
+fn handle_server_communication(rx: mpsc::Receiver<SessionMessage>) {
     let (mut ws, _) = connect("ws://127.0.0.1:9001").unwrap();
 
     while let Ok(cmd) = rx.recv() {
         let msg = Message::from(cmd.serialize());
         ws.send(msg);
-    };
-    
+    }
 }
-
-
 
 fn main() -> std::io::Result<()> {
     let socket_path = "/tmp/editor_socket.sock";
@@ -35,37 +34,33 @@ fn main() -> std::io::Result<()> {
     println!("Server listening on {}", socket_path);
     let (tx, rx) = mpsc::channel::<SessionMessage>();
 
-    let mut d = Doc::new("Hello world! This app is the best thing ever!");
-    // println!("{:#?}",d);
-    let mut rope = ropey::Rope::from_str("Łukasz");
-
-    // rope.byte_to_char(byte_idx)
-    // return Ok(());
-
+    let mut d = LocalDoc::default();
 
     thread::spawn(move || {
         handle_server_communication(rx);
     });
 
-                // println!("{}",d.to_string());
+    // println!("{}",d.to_string());
     for stream in listener.incoming() {
         match stream {
-            Ok(stream) => {
-                let updates = EditorMessage::deserialize_all(stream);
-
-                for update in updates.unwrap() {
-                    match update {
-                        EditorMessage::Insert(idx, chr) => {
-                            // d.insert_at(idx as usize, chr);
+            Ok(mut stream) => {
+                loop {
+                    let message = EditorMessage::deserialize(&mut stream);
+                    match message {
+                        Ok(EditorMessage::Insert(idx, text)) => {
+                            println!("Text received {} {}", idx, text);
+                            d.insert_at_byte(idx as usize, text);
                         }
-                        EditorMessage::Delete(idx) => {
-                            // d.delete_at(idx as usize)
+                        Ok(EditorMessage::Delete(start, len)) => {
+                            println!("Text deleted from range: {} {}", start, len);
+                            d.delete_bytes(start as usize, len as usize)
                         }
-
+                        Err(_) => break,
                     }
-                }
-                println!("{}",d.to_string());
+                    println!("{}",d.crdt.to_abs_string())
                 // stream.write_all(b"Hello from server")?;
+
+                }
             }
             Err(err) => {
                 eprintln!("Error: {}", err);

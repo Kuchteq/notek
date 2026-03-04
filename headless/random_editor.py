@@ -1,53 +1,48 @@
-import struct
-import random
 import socket
-import os
+import struct
+import time
 
-SOCKET_PATH = "/tmp/editor_socket.sock"  # adjust to your socket path
+# Path to your Unix socket
+SOCKET_PATH = "/tmp/editor_socket.sock"
 
-def generate_random_message(max_inserts=5, max_deletes=5, max_index=20):
+def pack_edit(index: int, delete: bool, char: str = None) -> bytes:
     """
-    Generates a random binary message in little-endian format:
-    [u32 num_inserts][u32 idx + u32 char]*[u32 num_deletes][u32 idx]*
+    Pack an edit command according to the protocol:
+    - 1 bit op (delete=1, insert=0)
+    - 31 bits index
+    - optional u32 char for insert
     """
-    message = bytearray()
+    if index < 0 or index > 0x7FFF_FFFF:
+        raise ValueError("index out of range")
 
-    # Inserts
-    num_inserts = random.randint(0, max_inserts)
-    message += struct.pack('<I', num_inserts)
-    inserts = []
-    for _ in range(num_inserts):
-        insert_idx = random.randint(0, max_index)
-        insert_char = random.randint(0x20, 0x7E)  # printable ASCII
-        message += struct.pack('<II', insert_idx, insert_char)
-        inserts.append((insert_idx, chr(insert_char)))
+    op_bit = 1 if delete else 0
+    value = (op_bit << 31) | index
+    data = struct.pack("<I", value)
 
-    # Deletes
-    num_deletes = random.randint(0, max_deletes)
-    message += struct.pack('<I', num_deletes)
-    deletes = []
-    for _ in range(num_deletes):
-        delete_idx = random.randint(0, max_index)
-        message += struct.pack('<I', delete_idx)
-        deletes.append(delete_idx)
+    if not delete:
+        byteEncoded = char.encode("utf-8")
+        data += struct.pack("<I", len(byteEncoded))
+        data += byteEncoded
+    return data
 
-    return bytes(message), inserts, deletes
+def main():
+    # Example edits to send
+    edits = [
+        (0, False, 'Jeje'),  # Insert 'H' at index 0
+        (1, False, 'another'),  # Insert 'i' at index 1
+        # (0, True),        # Delete character at index 0
+    ]
 
-def send_message(message, socket_path=SOCKET_PATH):
-    if not os.path.exists(socket_path):
-        raise FileNotFoundError(f"Socket not found at {socket_path}")
-
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.connect(socket_path)
-        client.sendall(message)
-        print(f"Sent {len(message)} bytes to {socket_path}")
+    # Connect to Unix socket
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(SOCKET_PATH)
+        for edit in edits:
+            index, delete = edit[0], edit[1]
+            char = edit[2] if len(edit) > 2 else None
+            msg = pack_edit(index, delete, char)
+            s.sendall(msg)
+            print(f"Sent: {edit}")
+            time.sleep(2)
 
 if __name__ == "__main__":
-    msg, inserts, deletes = generate_random_message()
-
-    print("Generated message:")
-    print(f" Inserts ({len(inserts)}): {inserts}")
-    print(f" Deletes ({len(deletes)}): {deletes}")
-    print(f" Raw hex: {msg.hex()}")
-
-    send_message(msg)
+    main()
