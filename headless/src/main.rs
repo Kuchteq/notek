@@ -12,10 +12,10 @@ use inotify::{EventMask, Inotify, WatchMask};
 use tungstenite::{Message, connect};
 
 use crate::editor_message::EditorMessage;
-use crate::local_doc::LocalDoc;
+use crate::state::State;
 
 mod editor_message;
-mod local_doc;
+mod state;
 
 fn handle_server_communication(rx: mpsc::Receiver<SessionMessage>) {
     let (mut ws, _) = connect("ws://127.0.0.1:9001").unwrap();
@@ -82,8 +82,6 @@ fn main() -> std::io::Result<()> {
     println!("Server listening on {}", socket_path);
     let (tx, rx) = mpsc::channel::<SessionMessage>();
 
-    let mut d = Doc::default();
-
     thread::spawn(move || {
         handle_server_communication(rx);
     });
@@ -92,6 +90,7 @@ fn main() -> std::io::Result<()> {
         monitor_updates();
     });
 
+    let mut state = State::init("./").unwrap();
     // println!("{}",d.to_string());
     for stream in listener.incoming() {
         match stream {
@@ -99,21 +98,28 @@ fn main() -> std::io::Result<()> {
                 loop {
                     let message = EditorMessage::deserialize(&mut stream);
                     match message {
+                        Ok(EditorMessage::ChooseDocument(doc_name)) => {
+                            println!("Document chosen: {}", doc_name);
+                            state.set_current_doc(&doc_name);
+                        }
                         Ok(EditorMessage::Insert(pos, text)) => {
                             println!("Text received {} {}", pos, text);
-                            let inserted = d.insert_text_at_bytepos(pos as usize, text);
-                            for (pid, c) in inserted {
-                                let msg = SessionMessage::Insert { site: 0, pid, c };
-                                tx.send(msg);
-                            }
+                            state.insert_in_current_doc(pos, &text);
+                            // for (pid, c) in inserted {
+                            //     let msg = SessionMessage::Insert { site: 0, pid, c };
+                            //     tx.send(msg);
+                            // }
                         }
                         Ok(EditorMessage::Delete(start, len)) => {
                             println!("Text deleted from range: {} {}", start, len);
-                            let deleted = d.delete_byte_range(start as usize, len as usize);
-                            for pid in deleted {
-                                let msg = SessionMessage::Delete { site: 0, pid };
-                                tx.send(msg);
-                            }
+                            state.delete_in_current_doc(start, len);
+                            // for pid in deleted {
+                            //     let msg = SessionMessage::Delete { site: 0, pid };
+                            //     tx.send(msg);
+                            // }
+                        }
+                        Ok(EditorMessage::Flush) => {
+                            state.flush_current_doc();
                         }
                         Err(_) => break,
                     }
