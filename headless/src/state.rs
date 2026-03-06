@@ -1,4 +1,4 @@
-use std::{collections::{BTreeMap, HashMap}, fs::File, io::{BufWriter, Write}, sync::mpsc};
+use std::{collections::{BTreeMap, HashMap}, fs::{self, File}, io::{BufWriter, Write}, sync::mpsc};
 
 use algos::{doc::Doc, structure::DocStructure};
 use anyhow::{Result, anyhow};
@@ -24,22 +24,35 @@ impl State {
             by_name: HashMap::new(),
         };
 
-        // for entry in fs::read_dir(dir)? {
-        //     let entry = entry?;
-        //     let path = entry.path();
-        //
-        //     if path.extension().and_then(|s| s.to_str()) == Some("md") {
-        //         let name = path
-        //             .file_stem()
-        //             .unwrap()
-        //             .to_str()
-        //             .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
-        //             .to_string();
-        //
-        //         s.add_doc(name, None)?;
-        //     }
-        // }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                let name = path
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
+                    .to_string();
+
+                s.add_doc(name, None)?;
+            }
+        }
         Ok(s)
+    }
+
+    pub fn add_doc(&mut self, name: String, upsertid: Option<u128>) -> Result<()> {
+        let mut s = DocStructure::load_or_create(&name, upsertid)?;
+        let idx = self.docs.len();
+        self.by_id.insert(s.id, idx);
+        if self.by_time.contains_key(&s.last_modified) {
+            s.last_modified += 1;
+        }
+        self.by_time.insert(s.last_modified, idx);
+        self.by_name.insert(name, idx);
+        self.docs.push(s);
+        Ok(())
     }
     pub fn set_current_doc(&mut self, name: &String) {
         self.current_doc = *self.by_name.get(name).unwrap();

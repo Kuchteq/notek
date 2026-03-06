@@ -15,9 +15,9 @@ use crate::{doc::{Doc, DocChar}, pid::Pid, sync::DocOp};
 #[derive(Debug)]
 pub struct DocStructure {
     pub id: u128,
-    last_modified: u64, // todo, change this, this field shouldn't be duplicating the key of the
+    pub last_modified: u64, // todo, change this, this field shouldn't be duplicating the key of the
     // btree
-    name: String,
+    pub name: String,
     pub state: DocState,
 }
 
@@ -137,7 +137,7 @@ impl DocStructure {
         })
     }
 
-    fn load_or_create(name: &str, upsertid: Option<u128>) -> Result<Self> {
+    pub fn load_or_create(name: &str, upsertid: Option<u128>) -> Result<Self> {
         let structure_path_str = format!("{}.md.structure", name);
         let structure_path = Path::new(&structure_path_str);
 
