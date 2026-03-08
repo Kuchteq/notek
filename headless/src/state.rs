@@ -1,48 +1,55 @@
-use std::{collections::{BTreeMap, HashMap}, fs::{self, File}, io::{BufWriter, Write}, sync::mpsc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    env,
+    fs::{self},
+    path::{Path, PathBuf},
+};
 
 use algos::{doc::Doc, structure::DocStructure};
 use anyhow::{Result, anyhow};
-
-use crate::editor_message::EditorMessage;
 
 #[derive(Debug)]
 pub struct State {
     pub docs: Vec<DocStructure>,
     pub current_doc: usize,
+    pub base_dir: PathBuf,
     pub by_time: BTreeMap<u64, usize>,
     pub by_id: HashMap<u128, usize>,
-    pub by_name: HashMap<String, usize>,
+    pub by_name: HashMap<PathBuf, usize>,
 }
 
 impl State {
-    pub fn init(dir: &str) -> Result<Self> {
+    pub fn init(dir: &Path) -> Result<Self> {
+        let base_dir = if dir.is_absolute() {
+            dir.to_path_buf()
+        } else {
+            env::current_dir()?.join(dir)
+        };
+
+        let base_dir = std::fs::canonicalize(base_dir)?;
+
         let mut s = State {
             docs: Vec::new(),
             current_doc: usize::MAX,
+            base_dir: base_dir,
             by_time: BTreeMap::new(),
             by_id: HashMap::new(),
             by_name: HashMap::new(),
         };
 
-        for entry in fs::read_dir(dir)? {
+        for entry in fs::read_dir(&s.base_dir)? {
             let entry = entry?;
             let path = entry.path();
+            let path = path.strip_prefix(&s.base_dir).unwrap();
 
             if path.extension().and_then(|s| s.to_str()) == Some("md") {
-                let name = path
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .ok_or_else(|| anyhow!("Invalid UTF-8 path: {:?}", path))?
-                    .to_string();
-
-                s.add_doc(name, None)?;
+                s.add_doc(path.to_path_buf(), None)?;
             }
         }
         Ok(s)
     }
 
-    pub fn add_doc(&mut self, name: String, upsertid: Option<u128>) -> Result<()> {
+    pub fn add_doc(&mut self, name: PathBuf, upsertid: Option<u128>) -> Result<()> {
         let mut s = DocStructure::load_or_create(&name, upsertid)?;
         let idx = self.docs.len();
         self.by_id.insert(s.id, idx);
@@ -51,11 +58,22 @@ impl State {
         }
         self.by_time.insert(s.last_modified, idx);
         self.by_name.insert(name, idx);
+        println!("{}",s.get_doc().to_string());
         self.docs.push(s);
         Ok(())
     }
-    pub fn set_current_doc(&mut self, name: &String) {
-        self.current_doc = *self.by_name.get(name).unwrap();
+
+    pub fn move_doc(&mut self, from: PathBuf, to: PathBuf) {
+        // self.by_name.get_key_value
+    }
+
+    pub fn set_current_doc(&mut self, name: &PathBuf) {
+        if self.current_doc != usize::MAX {
+            self.flush_current_doc();
+        }
+        let d = name.strip_prefix(&self.base_dir).unwrap();
+        println!("{:?} {:?} {:?} {:?}", name, self.base_dir, self.by_name, d);
+        self.current_doc = *self.by_name.get(d).unwrap();
     }
 
     pub fn insert_in_current_doc(&mut self, pos: u32, text: &String) {
@@ -77,7 +95,7 @@ impl State {
     //         match cmd {
     //             EditorMessage::Insert(pos, text) => todo!(),
     //             EditorMessage::Delete(start, len) => todo!(),
-    //             EditorMessage::ChooseDocument(name) => { 
+    //             EditorMessage::ChooseDocument(name) => {
     //                 self.by_name.get(&name);
     //             },
     //         }
@@ -104,5 +122,4 @@ impl State {
     //     &mut self.docs[self.by_id[&document_id]]
     //     // self.docs.values().find(|d| d.id == document_id).unwrap().get_doc()
     // }
-
 }

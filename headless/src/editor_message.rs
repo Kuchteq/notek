@@ -1,10 +1,10 @@
-use std::io::{self, Read};
+use std::{io::{self, Read}, path::PathBuf};
 
 #[derive(Debug)]
 pub enum EditorMessage {
     Insert(u32, String),
     Delete(u32, u32),
-    ChooseDocument(String),
+    ChooseDocument(PathBuf),
     Flush,
 }
 
@@ -42,11 +42,13 @@ impl EditorMessage {
 
             // Choose document (read until EOF)
             2 => {
-                let mut buf = Vec::new();
-                reader.read_to_end(&mut buf)?;
 
-                let name = String::from_utf8(buf)
-                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))?;
+                let len = reader.read_u32::<LittleEndian>()?;
+                let mut buf = vec![0u8; len as usize];
+                reader.read_exact(&mut buf)?;
+
+                let name = PathBuf::from(String::from_utf8(buf)
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))?);
 
                 Ok(EditorMessage::ChooseDocument(name))
             }

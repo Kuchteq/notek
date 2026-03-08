@@ -220,7 +220,7 @@ impl Doc {
         return new;
     }
 
-    pub fn insert_text_at_bytepos(&mut self, pos: usize, text: &String) -> Vec<(Pid, char)> {
+    pub fn insert_text_at_bytepos(&mut self, pos: usize, text: &str) -> Vec<(Pid, char)> {
         let mut pos = self.content.alt_to_index(pos);
         // ik its in bytes but it's a good enough heuristic
         let mut inserted = Vec::with_capacity(text.len());

@@ -90,7 +90,7 @@ fn main() -> std::io::Result<()> {
         monitor_updates();
     });
 
-    let mut state = State::init("./").unwrap();
+    let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
     // println!("{}",d.to_string());
     for stream in listener.incoming() {
         match stream {
@@ -99,7 +99,7 @@ fn main() -> std::io::Result<()> {
                     let message = EditorMessage::deserialize(&mut stream);
                     match message {
                         Ok(EditorMessage::ChooseDocument(doc_name)) => {
-                            println!("Document chosen: {}", doc_name);
+                            // println!("Document chosen: {}", doc_name);
                             state.set_current_doc(&doc_name);
                         }
                         Ok(EditorMessage::Insert(pos, text)) => {

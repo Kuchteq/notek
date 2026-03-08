@@ -27,6 +27,7 @@ The editor connects to the client over a unix socket and it sends a **byte-level
 
 3. Chose document
 - ⎧ u8 2 for marking we're choosing a given document with a given name
+- | u32 document_name_len
 - ⎩ [u8] document_name till the eof
 Also performs a flush of the current document
 
