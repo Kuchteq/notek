@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use algos::{doc::Doc, structure::DocStructure};
-use anyhow::{Result, anyhow};
+use algos::{doc::Doc, pid::Pid, structure::DocStructure};
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct State {
@@ -37,20 +37,29 @@ impl State {
             by_name: HashMap::new(),
         };
 
-        for entry in fs::read_dir(&s.base_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let path = path.strip_prefix(&s.base_dir).unwrap();
-
-            if path.extension().and_then(|s| s.to_str()) == Some("md") {
-                s.add_doc(path.to_path_buf(), None)?;
-            }
-        }
+        s.scan_dir_recursive(&s.base_dir.clone())?;
         Ok(s)
     }
 
-    pub fn add_doc(&mut self, name: PathBuf, upsertid: Option<u128>) -> Result<()> {
+    /// Recursively scan a directory for .md files and add them.
+    fn scan_dir_recursive(&mut self, dir: &Path) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                self.scan_dir_recursive(&path)?;
+            } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                let rel = path.strip_prefix(&self.base_dir).unwrap();
+                self.add_doc(rel.to_path_buf(), None)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn add_doc(&mut self, name: PathBuf, upsertid: Option<u128>) -> Result<&DocStructure> {
         let mut s = DocStructure::load_or_create(&name, upsertid)?;
+        let doc_id = s.id;
         let idx = self.docs.len();
         self.by_id.insert(s.id, idx);
         if self.by_time.contains_key(&s.last_modified) {
@@ -58,16 +67,22 @@ impl State {
         }
         self.by_time.insert(s.last_modified, idx);
         self.by_name.insert(name, idx);
-        println!("{}",s.get_doc().to_string());
+        println!("{}", s.get_doc().to_string());
         self.docs.push(s);
-        Ok(())
+        Ok(self.docs.last().unwrap())
     }
 
     pub fn move_doc(&mut self, from: PathBuf, to: PathBuf) {
-        // self.by_name.get_key_value
+        if let Some(idx) = self.by_name.remove(&from) {
+            if let Err(e) = self.docs[idx].update_name_after_external_rename(&to) {
+                eprintln!("Failed to rename structure file for {:?}: {}", from, e);
+            }
+            self.by_name.insert(to, idx);
+        }
     }
 
     pub fn set_current_doc(&mut self, name: &PathBuf) {
+        println!("name: {:?}", name);
         if self.current_doc != usize::MAX {
             self.flush_current_doc();
         }
@@ -76,11 +91,11 @@ impl State {
         self.current_doc = *self.by_name.get(d).unwrap();
     }
 
-    pub fn insert_in_current_doc(&mut self, pos: u32, text: &String) {
-        let inserted = self.docs[self.current_doc].insert_text_at_bytepos(pos as usize, text);
+    pub fn insert_in_current_doc(&mut self, pos: u32, text: &String) -> Vec<(Pid, char)> {
+        self.docs[self.current_doc].insert_text_at_bytepos(pos as usize, text)
     }
-    pub fn delete_in_current_doc(&mut self, start: u32, len: u32) {
-        let deleted = self.docs[self.current_doc].delete_byte_range(start as usize, len as usize);
+    pub fn delete_in_current_doc(&mut self, start: u32, len: u32) -> Vec<Pid> {
+        self.docs[self.current_doc].delete_byte_range(start as usize, len as usize)
     }
 
     pub fn flush_current_doc(&self) -> Result<()> {
@@ -88,6 +103,23 @@ impl State {
         current_doc.flush()?;
         Ok(())
     }
+
+    pub fn get_current_doc_id(&self) -> u128 {
+        self.docs[self.current_doc].id
+    }
+    pub fn get_current_doc_name(&self) -> &PathBuf {
+        &self.docs[self.current_doc].name
+    }
+    pub fn get_current_doc_crdt(&self) -> &Doc {
+        &self.docs[self.current_doc].get_doc()
+    }
+    pub fn get_doc_by_name(&self, name: &PathBuf) -> &DocStructure {
+        &self.docs[*self.by_name.get(name).unwrap()]
+    }
+
+    // pub fn get_doc_by_id(&self, id: ) -> &DocStructure {
+    //     &self.docs[*self.by_name.get(name).unwrap()]
+    // }
 
     // pub async fn run_state_manager(mut self, mut rx: mpsc::Receiver<EditorMessage>) {
     //     let mut current_doc = -1;

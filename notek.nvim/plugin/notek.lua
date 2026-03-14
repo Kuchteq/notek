@@ -22,6 +22,7 @@ vim.api.nvim_create_autocmd("BufEnter", {
 vim.api.nvim_create_autocmd("BufWritePost", {
   group = group,
   callback = function(args)
+    notek.attach(args.buf)
     notek.flush(args.buf)
   end,
 })

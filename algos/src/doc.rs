@@ -21,7 +21,7 @@ pub struct DocChar(pub char);
 
 #[derive(Debug, Clone)]
 pub struct Doc {
-    content: MarTree<Pid, DocChar>,
+    pub content: MarTree<Pid, DocChar>,
 }
 
 impl Default for Doc {

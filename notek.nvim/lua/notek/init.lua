@@ -19,6 +19,9 @@ local function is_trackable(bufnr)
   local name = vim.api.nvim_buf_get_name(bufnr)
   if name == "" then return false end
 
+  local stat = vim.uv.fs_stat(name)
+  if not stat or stat.type ~= "file" then return false end
+
   return true
 end
 

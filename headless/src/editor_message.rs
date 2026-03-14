@@ -1,4 +1,7 @@
-use std::{io::{self, Read}, path::PathBuf};
+use std::{
+    io::{self, Read},
+    path::PathBuf,
+};
 
 #[derive(Debug)]
 pub enum EditorMessage {
@@ -42,25 +45,21 @@ impl EditorMessage {
 
             // Choose document (read until EOF)
             2 => {
-
                 let len = reader.read_u32::<LittleEndian>()?;
                 let mut buf = vec![0u8; len as usize];
                 reader.read_exact(&mut buf)?;
 
-                let name = PathBuf::from(String::from_utf8(buf)
-                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))?);
+                let name =
+                    PathBuf::from(String::from_utf8(buf).map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8")
+                    })?);
 
                 Ok(EditorMessage::ChooseDocument(name))
             }
 
-            3 => {
-                Ok(EditorMessage::Flush)
-            }
+            3 => Ok(EditorMessage::Flush),
 
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Unknown opcode",
-            )),
+            _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown opcode")),
         }
     }
 }

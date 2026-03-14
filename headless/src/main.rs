@@ -1,77 +1,92 @@
-use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::os::unix::net::UnixListener;
+use std::env;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::{env, fs, thread};
+use std::process;
+use std::sync::mpsc::{self, Sender};
+use std::{fs, thread};
 
-use algos::doc::Doc;
 use algos::session::SessionMessage;
-use inotify::{EventMask, Inotify, WatchMask};
-use tungstenite::{Message, connect};
+use algos::structure::DocStructure;
+use tungstenite::{connect, Message};
 
+use crate::app::{run_app, AppEvent};
 use crate::editor_message::EditorMessage;
+use crate::monitor::monitor_updates;
 use crate::state::State;
 
+mod app;
 mod editor_message;
+mod monitor;
 mod state;
 
 fn handle_server_communication(rx: mpsc::Receiver<SessionMessage>) {
     let (mut ws, _) = connect("ws://127.0.0.1:9001").unwrap();
-    let start = SessionMessage::Start {
-        document_id: u128::max_value(),
-        last_sync_time: 0,
-    };
-    ws.send(Message::from(start.serialize()));
     while let Ok(cmd) = rx.recv() {
         let msg = Message::from(cmd.serialize());
-        ws.send(msg);
+        let _ = ws.send(msg);
     }
 }
 
-fn monitor_updates() {
-    let mut inotify = Inotify::init().expect("Failed to initialize inotify");
-
-    let current_dir = env::current_dir().expect("Failed to determine current directory");
-
-    inotify
-        .watches()
-        .add(&current_dir, WatchMask::MOVE)
-        .expect("Failed to add inotify watch");
-
-    println!("Watching current directory for activity...");
-
-    let mut pending_moves: HashMap<u32, PathBuf> = HashMap::new();
-    let mut buffer = [0u8; 4096];
-
-    loop {
-        let events = inotify
-            .read_events_blocking(&mut buffer)
-            .expect("Failed to read inotify events");
-
-        for event in events {
-            let name = match event.name {
-                Some(n) => current_dir.join(n),
-                None => continue,
-            };
-
-            if event.mask.contains(EventMask::MOVED_FROM) {
-                pending_moves.insert(event.cookie, name.clone());
+fn accept_connections(listener: UnixListener, tx: Sender<AppEvent>) {
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let tx = tx.clone();
+                thread::spawn(move || {
+                    handle_client(stream, tx);
+                });
             }
-
-            if event.mask.contains(EventMask::MOVED_TO) {
-                if let Some(src) = pending_moves.remove(&event.cookie) {
-                    println!("Renamed: {:?} -> {:?}", src, name);
-                } else {
-                    println!("File moved into watched dir: {:?}", name);
-                }
+            Err(err) => {
+                eprintln!("Error accepting connection: {}", err);
             }
         }
     }
 }
 
+fn handle_client(mut stream: UnixStream, tx: Sender<AppEvent>) {
+    loop {
+        match EditorMessage::deserialize(&mut stream) {
+            Ok(msg) => {
+                if tx.send(AppEvent::EditorMsg(msg)).is_err() {
+                    break;
+                }
+            }
+            Err(_) => {
+                let _ = tx.send(AppEvent::ClientDisconnected);
+                break;
+            }
+        }
+    }
+}
+
+fn read_doc(path: &str) {
+    let path = PathBuf::from(path);
+
+    if !path.exists() {
+        eprintln!("File not found: {:?}", path);
+        process::exit(1);
+    }
+
+    match DocStructure::read_existing(&path, &path) {
+        Ok(doc) => {
+            print!("{}", doc.get_doc().to_string());
+        }
+        Err(e) => {
+            eprintln!("Failed to read structure file: {}", e);
+            process::exit(1);
+        }
+    }
+}
+
 fn main() -> std::io::Result<()> {
+    let args: Vec<String> = env::args().collect();
+
+    // Handle -r flag: read and print document contents, then exit
+    if args.len() >= 3 && args[1] == "-r" {
+        read_doc(&args[2]);
+        return Ok(());
+    }
+
     let socket_path = "/tmp/editor_socket.sock";
 
     if fs::metadata(socket_path).is_ok() {
@@ -80,57 +95,28 @@ fn main() -> std::io::Result<()> {
 
     let listener = UnixListener::bind(socket_path)?;
     println!("Server listening on {}", socket_path);
-    let (tx, rx) = mpsc::channel::<SessionMessage>();
 
-    thread::spawn(move || {
-        handle_server_communication(rx);
-    });
-
-    thread::spawn(move || {
-        monitor_updates();
-    });
+    let (session_tx, session_rx) = mpsc::channel::<SessionMessage>();
+    let (tx, rx) = mpsc::channel::<AppEvent>();
 
     let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
-    // println!("{}",d.to_string());
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                loop {
-                    let message = EditorMessage::deserialize(&mut stream);
-                    match message {
-                        Ok(EditorMessage::ChooseDocument(doc_name)) => {
-                            // println!("Document chosen: {}", doc_name);
-                            state.set_current_doc(&doc_name);
-                        }
-                        Ok(EditorMessage::Insert(pos, text)) => {
-                            println!("Text received {} {}", pos, text);
-                            state.insert_in_current_doc(pos, &text);
-                            // for (pid, c) in inserted {
-                            //     let msg = SessionMessage::Insert { site: 0, pid, c };
-                            //     tx.send(msg);
-                            // }
-                        }
-                        Ok(EditorMessage::Delete(start, len)) => {
-                            println!("Text deleted from range: {} {}", start, len);
-                            state.delete_in_current_doc(start, len);
-                            // for pid in deleted {
-                            //     let msg = SessionMessage::Delete { site: 0, pid };
-                            //     tx.send(msg);
-                            // }
-                        }
-                        Ok(EditorMessage::Flush) => {
-                            state.flush_current_doc();
-                        }
-                        Err(_) => break,
-                    }
-                    // stream.write_all(b"Hello from server")?;
-                }
-            }
-            Err(err) => {
-                eprintln!("Error: {}", err);
-            }
-        }
-    }
+
+    thread::spawn(move || {
+        handle_server_communication(session_rx);
+    });
+
+    let base_dir = state.base_dir.clone();
+    let inotify_tx = tx.clone();
+    thread::spawn(move || {
+        monitor_updates(inotify_tx, &base_dir);
+    });
+
+    let accept_tx = tx.clone();
+    thread::spawn(move || {
+        accept_connections(listener, accept_tx);
+    });
+
+    run_app(rx, &mut state, session_tx);
 
     Ok(())
 }

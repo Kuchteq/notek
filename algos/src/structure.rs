@@ -5,12 +5,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use byteorder::{LittleEndian, ReadBytesExt};
 use anyhow::Result;
+use byteorder::{LittleEndian, ReadBytesExt};
 use uuid::Uuid;
 
-use crate::{doc::{Doc, DocChar}, pid::Pid, sync::DocOp};
-
+use crate::{
+    doc::{Doc, DocChar},
+    pid::Pid,
+    sync::DocOp,
+};
 
 #[derive(Debug)]
 pub struct DocStructure {
@@ -69,9 +72,17 @@ impl DocStructure {
         }
     }
 
+    pub fn applyOp(&mut self, op: DocOp) {
+        match &mut self.state {
+            DocState::Missing => todo!(),
+            DocState::Cached(doc) => match op {
+                DocOp::Insert(pid, c) => doc.insert(pid, DocChar(c)),
+                DocOp::Delete(pid) => doc.delete(&pid),
+            },
+        }
+    }
     pub fn create_new(name: &Path, doc_id: u128) -> Result<Self> {
-        let timestamp_ms =
-            SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
+        let timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
 
         let plaintext_path = name.with_extension("md");
 
@@ -102,16 +113,15 @@ impl DocStructure {
         if let DocState::Cached(doc) = &self.state {
             doc.write_bytes(&mut writer);
             writer.flush()?;
-
-            let human_readable_path = self.get_plainmd_path();
-            let human_readable = doc.to_string();
-            fs::write(human_readable_path, human_readable)?;
+            // let human_readable_path = self.get_plainmd_path();
+            // let human_readable = doc.to_string();
+            // fs::write(human_readable_path, human_readable)?;
         }
 
         Ok(())
     }
 
-    fn delete_files(&self) -> Result<()> {
+    pub fn delete_files(&self) -> Result<()> {
         fs::remove_file(self.get_structure_path())?;
         fs::remove_file(self.get_plainmd_path())?;
         Ok(())
@@ -125,7 +135,7 @@ impl DocStructure {
         self.name.with_extension("md")
     }
 
-    fn read_existing(structure_path: &Path, name: &Path) -> Result<Self> {
+    pub fn read_existing(structure_path: &Path, name: &Path) -> Result<Self> {
         let file = File::open(structure_path)?;
         let mut reader = BufReader::new(file);
 
@@ -152,13 +162,36 @@ impl DocStructure {
         }
     }
 
-    fn set_name(&mut self, name: &Path) -> Result<()> {
+    pub fn set_name(&mut self, name: &Path) -> Result<()> {
         println!("old {:?} new {:?}", self.name, name);
 
-        fs::rename(self.get_structure_path(), name.with_extension("md.structure"))?;
+        fs::rename(
+            self.get_structure_path(),
+            name.with_extension("md.structure"),
+        )?;
         fs::rename(self.get_plainmd_path(), name.with_extension("md"))?;
 
         self.name = name.to_path_buf();
+        Ok(())
+    }
+
+    /// Update the name after an external rename of the .md file.
+    /// Only renames the .md.structure companion file (the .md was already
+    /// renamed by the OS / another process).
+    pub fn update_name_after_external_rename(&mut self, new_name: &Path) -> Result<()> {
+        let old_structure = self.get_structure_path();
+        let new_structure = new_name.with_extension("md.structure");
+
+        // Ensure parent directories exist (e.g. moving note.md -> school/math/note.md)
+        if let Some(parent) = new_structure.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        if old_structure.exists() {
+            fs::rename(&old_structure, &new_structure)?;
+        }
+
+        self.name = new_name.to_path_buf();
         Ok(())
     }
 }

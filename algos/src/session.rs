@@ -1,7 +1,9 @@
-use std::io::{BufRead, Cursor, Read};
+use std::{
+    io::{self, BufRead, Cursor, Read},
+    path::PathBuf,
+};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{doc::Doc, pid::Pid};
@@ -11,6 +13,7 @@ pub enum SessionMessage {
     Start {
         document_id: u128,
         last_sync_time: u64,
+        name: Option<PathBuf>,
     },
     Insert {
         site: u8,
@@ -22,11 +25,7 @@ pub enum SessionMessage {
         pid: Pid,
     },
     ChangeName {
-        name: String,
-    },
-    NewSession {
-        site: u8,
-        doc: Doc,
+        name: PathBuf,
     },
 }
 
@@ -36,22 +35,15 @@ impl SessionMessage {
             SessionMessage::Start {
                 document_id,
                 last_sync_time,
+                name,
             } => {
                 let mut buf = vec![64u8];
                 buf.extend(last_sync_time.to_le_bytes());
                 buf.extend(document_id.to_le_bytes());
-                buf
-            }
-
-            SessionMessage::NewSession { site, doc } => {
-                // Not present in deserialize; keep or remove depending on protocol usage.
-                let mut buf = vec![65u8];
-                buf.push(*site);
-
-                let char_len = doc.char_len();
-                buf.push(char_len as u8);
-
-                doc.write_bytes_tobuf(&mut buf);
+                if let Some(name) = name {
+                    buf.extend_from_slice(name.to_string_lossy().as_bytes());
+                }
+                buf.push(b'\n');
                 buf
             }
 
@@ -96,7 +88,7 @@ impl SessionMessage {
                 let mut buf = vec![67u8];
 
                 // serialize name as UTF-8 bytes terminated by '\n'
-                buf.extend_from_slice(name.as_bytes());
+                buf.extend_from_slice(name.to_string_lossy().as_bytes());
                 buf.push(b'\n');
 
                 buf
@@ -109,9 +101,18 @@ impl SessionMessage {
             64u8 => {
                 let last_sync_time = cur.read_u64::<LittleEndian>().unwrap();
                 let document_id = cur.read_u128::<LittleEndian>().unwrap();
+                let mut name_buf = Vec::new();
+                cur.read_until(b'\n', &mut name_buf).unwrap();
+
+                let name = (!name_buf.is_empty() && name_buf != b"\n").then(|| {
+                    name_buf.pop();
+                    PathBuf::from(String::from_utf8(name_buf).unwrap())
+                });
+
                 SessionMessage::Start {
                     document_id,
                     last_sync_time,
+                    name,
                 }
             }
             65u8 => {
@@ -145,15 +146,7 @@ impl SessionMessage {
                 let mut document_name = Vec::new();
                 cur.read_until(b'\n', &mut document_name);
                 SessionMessage::ChangeName {
-                    name: String::from_utf8(document_name).unwrap(),
-                }
-            }
-            68u8 => {
-                let site = cur.read_u8().unwrap();
-                let number_of_atoms = cur.read_u64::<LittleEndian>().unwrap() as usize;
-                SessionMessage::NewSession {
-                    site: site,
-                    doc: Doc::from_reader(&mut cur, number_of_atoms),
+                    name: PathBuf::from(String::from_utf8(document_name).unwrap()),
                 }
             }
             _ => panic!(),

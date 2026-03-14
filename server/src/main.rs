@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use algos::sync::SyncRequests;
 use anyhow::{anyhow};
 use futures::stream::SplitSink;
@@ -21,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(100); // shared channel to state manager
 
     tokio::spawn(async {
-        let mut state = State::init("./").unwrap();
+        let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
         state.run_state_manager(rx).await;
     });
 
@@ -67,7 +69,6 @@ async fn start_handling_sync_requests(
             handle_sync_request(bin.to_vec(), &state_tx, &mut ws_sink).await;
         }
     }
-
     Ok(())
 }
 

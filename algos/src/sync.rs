@@ -1,6 +1,6 @@
 use std::{
     io::{Cursor, Write},
-    panic,
+    panic, path::PathBuf,
 };
 
 use anyhow::Result;
@@ -45,7 +45,7 @@ pub enum SyncResponses<'a> {
     SyncList(Vec<DocSyncInfo>),
     SyncDoc {
         document_id: u128,
-        name: String,
+        name: PathBuf,
         doc: &'a Doc,
     },
 }
@@ -84,7 +84,7 @@ impl SyncResponses<'_> {
             } => {
                 w.write_all(&[33u8])?;
                 w.write_all(&document_id.to_le_bytes())?;
-                w.write_all(name.as_bytes());
+                w.write_all(name.to_string_lossy().as_bytes());
                 w.write_all(&[b'\n']);
                 // Number of insert atoms:
                 w.write_all(&(doc.char_len() as u64).to_le_bytes())?;

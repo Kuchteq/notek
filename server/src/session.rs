@@ -35,12 +35,19 @@ impl SessionMember {
             SessionMessage::Start {
                         document_id,
                         last_sync_time,
+                        name,
                     } => {
+                        if self.document_id != 0 {
+                            state_tx.send(StateCommand::FlushChanges { document_id: self.document_id }).await;
+                        }
                         self.document_id = document_id;
                         self.connection_site_id = rand::rng().random_range(0..255);
-                        state_tx.send(StateCommand::UpsertDoc {
-                            document_id: self.document_id,
-                        }).await;
+                        if let Some(name) = name {
+                            state_tx.send(StateCommand::UpsertDoc {
+                                document_id: self.document_id,
+                                name: name
+                            }).await;
+                        }
                         println!("started a sesh");
                     }
             SessionMessage::Insert { site, pid, c } => {
@@ -57,7 +64,6 @@ impl SessionMember {
                             op,
                         }).await;
                     }
-            SessionMessage::NewSession { site, doc } => todo!(),
             SessionMessage::ChangeName { name } => {
                 state_tx.send(StateCommand::ChangeName { document_id: self.document_id, name }).await;
             },
