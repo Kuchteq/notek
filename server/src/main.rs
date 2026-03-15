@@ -1,19 +1,16 @@
 use std::path::PathBuf;
 
-use algos::sync::SyncRequests;
-use anyhow::{anyhow};
-use futures::stream::SplitSink;
-use tokio_tungstenite::WebSocketStream;
-
-use futures::{SinkExt, StreamExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, oneshot};
+use futures::StreamExt;
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
-use crate::session::{SessionMember};
+use crate::session::start_handling_session_requests;
 use crate::state::{State, StateCommand};
+use crate::sync::start_handling_sync_requests;
 mod session;
 mod state;
+mod sync;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -43,100 +40,26 @@ async fn handle_connection(
     stream: tokio::net::TcpStream,
     state_tx: mpsc::Sender<StateCommand>,
 ) -> anyhow::Result<()> {
-    let mut ws = accept_async(stream).await?;
-    if let Some(msg) = ws.next().await {
+    let ws = accept_async(stream).await?;
+    let (mut ws_sink, mut ws_stream) = ws.split();
+
+    // Read the first message to determine connection type
+    if let Some(msg) = ws_stream.next().await {
         let msg = msg?;
         if let Message::Binary(bin) = msg {
             match bin[0] {
-                0..63 => {
-                    start_handling_sync_requests(bin.to_vec(), state_tx, ws).await;
+                // Sync requests: first byte < 64 (tags 0-4)
+                0..64 => {
+                    start_handling_sync_requests(bin.to_vec(), state_tx, ws_sink, ws_stream)
+                        .await?;
                 }
+                // Session requests: first byte >= 64 (tags 64+)
                 _ => {
-                    start_handling_session_requests(bin.to_vec(), state_tx, ws).await;
+                    start_handling_session_requests(bin.to_vec(), state_tx, ws_sink, ws_stream)
+                        .await?;
                 }
             }
         }
-    }
-    Ok(())
-}
-
-async fn start_handling_sync_requests(
-    first_bin: Vec<u8>,
-    state_tx: mpsc::Sender<StateCommand>,
-    ws: WebSocketStream<TcpStream>,
-) -> anyhow::Result<()> {
-    let (mut ws_sink, mut ws_stream) = ws.split();
-    handle_sync_request(first_bin, &state_tx, &mut ws_sink).await;
-
-    while let Some(msg) = ws_stream.next().await {
-        let msg = msg?;
-        if let Message::Binary(bin) = msg {
-            handle_sync_request(bin.to_vec(), &state_tx, &mut ws_sink).await;
-        }
-    }
-    Ok(())
-}
-
-async fn start_handling_session_requests(
-    first_bin: Vec<u8>,
-    state_tx: mpsc::Sender<StateCommand>,
-    ws: WebSocketStream<TcpStream>,
-) -> anyhow::Result<()> {
-    let (mut ws_sink, mut ws_stream) = ws.split();
-    if first_bin[0] != 64 {
-        anyhow!("First session message should be a start!");
-    }
-    let mut session = SessionMember::init();
-    session
-        .handle_session_request(first_bin, &state_tx, &mut ws_sink)
-        .await?;
-
-    while let Some(msg) = ws_stream.next().await {
-        let msg = msg?;
-        if let Message::Binary(bin) = msg {
-            session
-                .handle_session_request(bin.to_vec(), &state_tx, &mut ws_sink)
-                .await?;
-        }
-    }
-    println!("Finished");
-    session.flush_changes(&state_tx).await;
-    Ok(())
-}
-async fn handle_sync_request(
-    bin: Vec<u8>,
-    state_tx: &mpsc::Sender<StateCommand>,
-    ws_sink: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
-) -> anyhow::Result<()> {
-    let req = SyncRequests::deserialize(bin);
-
-    println!("{:#?}", req);
-    match req {
-        SyncRequests::SyncList { .. } => {
-                let (resp_tx, resp_rx) = oneshot::channel();
-                state_tx
-                    .send(StateCommand::GetSyncList {
-                        last_sync_time: 0,
-                        respond_to: resp_tx,
-                    })
-                    .await?;
-                let buf = resp_rx.await?;
-                ws_sink.send(Message::from(buf)).await?;
-            }
-        SyncRequests::SyncDoc { document_id, .. } => {
-                let (resp_tx, resp_rx) = oneshot::channel();
-                state_tx
-                    .send(StateCommand::GetSyncFullDoc {
-                        document_id,
-                        respond_to: resp_tx,
-                    })
-                    .await?;
-                let buf = resp_rx.await?;
-                ws_sink.send(Message::from(buf)).await?;
-            }
-        SyncRequests::DeleteDoc { document_id } => {
-            state_tx.send(StateCommand::DeleteDoc { document_id }).await;
-        },
     }
     Ok(())
 }

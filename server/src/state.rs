@@ -1,11 +1,10 @@
 use std::{
-    collections::{BTreeMap, HashMap}, env, fs::{self, OpenOptions}, path::{Path, PathBuf}
+    collections::{BTreeMap, HashMap}, env, fs, path::{Path, PathBuf}
 };
 
-use algos::{doc::{Doc, DocChar}, structure::DocStructure, sync::{DocOp, DocSyncInfo, SyncResponses}};
-use anyhow::{Result, anyhow};
+use algos::{doc::Doc, structure::DocStructure, sync::{DocOp, DocSyncInfo, SyncResponses}};
+use anyhow::Result;
 use tokio::sync::{mpsc, oneshot};
-use uuid::Uuid;
 
 
 #[derive(Debug)]
@@ -123,7 +122,9 @@ impl State {
                         doc: structure.get_doc(),
                     };
                     let mut buf = Vec::new();
-                    r.serialize_into(&mut buf);
+                    if let Err(e) = r.serialize_into(&mut buf) {
+                        eprintln!("Failed to serialize SyncDoc: {}", e);
+                    }
                     let _ = respond_to.send(buf);
                 }
                 StateCommand::GetSyncList {
@@ -139,7 +140,9 @@ impl State {
                     let r = SyncResponses::SyncList(docs);
                     println!("the synclist {:#?}", r);
                     let mut buf = Vec::new();
-                    r.serialize_into(&mut buf);
+                    if let Err(e) = r.serialize_into(&mut buf) {
+                        eprintln!("Failed to serialize SyncList: {}", e);
+                    }
                     let _ = respond_to.send(buf);
                 }
                 StateCommand::UpdateDoc { document_id, op } => {
@@ -148,25 +151,35 @@ impl State {
                     println!("{:#?}", ds)
                 }
                 StateCommand::UpsertDoc { name, document_id } => {
-                    if let None = self.by_id.get(&document_id) {
-                        self.add_doc(name, Some(document_id));
+                    if self.by_id.get(&document_id).is_none() {
+                        if let Err(e) = self.add_doc(name, Some(document_id)) {
+                            eprintln!("Failed to upsert doc {}: {}", document_id, e);
+                        }
                     } else {
-                        self.get_structure(document_id).update_name_after_external_rename(name.as_path());
+                        if let Err(e) = self.get_structure(document_id).update_name_after_external_rename(name.as_path()) {
+                            eprintln!("Failed to rename doc {}: {}", document_id, e);
+                        }
                     }
                 }
                 StateCommand::ChangeName { document_id, name } => {
-                    self.get_structure(document_id).update_name_after_external_rename(name.as_path());
+                    if let Err(e) = self.get_structure(document_id).update_name_after_external_rename(name.as_path()) {
+                        eprintln!("Failed to change name for doc {}: {}", document_id, e);
+                    }
                 }
                 StateCommand::FlushChanges { document_id } => {
                     println!("flushed!");
-                    self.get_structure(document_id).flush();
+                    if let Err(e) = self.get_structure(document_id).flush() {
+                        eprintln!("Failed to flush doc {}: {}", document_id, e);
+                    }
                 }
                 StateCommand::DeleteDoc { document_id } => {
                     if let Some(&idx) = self.by_id.get(&document_id) {
                         let removed_doc = self.docs.swap_remove(idx);
                         self.by_id.remove(&document_id);
                         self.by_time.remove(&removed_doc.last_modified);
-                        removed_doc.delete_files();
+                        if let Err(e) = removed_doc.delete_files() {
+                            eprintln!("Failed to delete files for doc {}: {}", document_id, e);
+                        }
                         if idx < self.docs.len() {
                             let moved_doc = &self.docs[idx];
                             self.by_id.insert(moved_doc.id, idx);
@@ -179,9 +192,3 @@ impl State {
     }
 }
 
-
-#[derive(Debug)]
-enum DocState {
-    Missing,
-    Cached(Doc),
-}
