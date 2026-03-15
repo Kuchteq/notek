@@ -71,13 +71,13 @@ impl PeerMessage {
                     .next()
                     .unwrap();
                 let pid_depth = cur.read_u8().unwrap();
-                let pid = Pid::from_reader(&mut cur, pid_depth as usize);
+                let pid = Pid::read_bytes(&mut cur, pid_depth as usize);
                 PeerMessage::Insert { site: site, pid: pid, c: data }
             }
             3u8 => {
                 let site = cur.read_u8().unwrap();
                 let pid_depth = cur.read_u8().unwrap();
-                let pid = Pid::from_reader(&mut cur, pid_depth as usize);
+                let pid = Pid::read_bytes(&mut cur, pid_depth as usize);
                 PeerMessage::Delete { site: site, pid: pid }
             }
             _ => panic!(),

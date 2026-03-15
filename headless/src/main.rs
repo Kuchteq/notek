@@ -7,17 +7,20 @@ use std::{fs, thread};
 
 use algos::session::SessionMessage;
 use algos::structure::DocStructure;
+use algos::sync::SyncRequests;
 use tungstenite::{connect, Message};
 
 use crate::app::{run_app, AppEvent};
 use crate::editor_message::EditorMessage;
 use crate::monitor::monitor_updates;
 use crate::state::State;
+use crate::sync::handle_sync_communication;
 
 mod app;
 mod editor_message;
 mod monitor;
 mod state;
+mod sync;
 
 fn handle_server_communication(rx: mpsc::Receiver<SessionMessage>) {
     let (mut ws, _) = connect("ws://127.0.0.1:9001").unwrap();
@@ -97,12 +100,18 @@ fn main() -> std::io::Result<()> {
     println!("Server listening on {}", socket_path);
 
     let (session_tx, session_rx) = mpsc::channel::<SessionMessage>();
+    let (sync_tx, sync_rx) = mpsc::channel::<SyncRequests>();
     let (tx, rx) = mpsc::channel::<AppEvent>();
 
     let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
 
     thread::spawn(move || {
         handle_server_communication(session_rx);
+    });
+
+    let sync_app_tx = tx.clone();
+    thread::spawn(move || {
+        handle_sync_communication(sync_rx, sync_app_tx);
     });
 
     let base_dir = state.base_dir.clone();
@@ -116,7 +125,7 @@ fn main() -> std::io::Result<()> {
         accept_connections(listener, accept_tx);
     });
 
-    run_app(rx, &mut state, session_tx);
+    run_app(rx, &mut state, session_tx, sync_tx);
 
     Ok(())
 }

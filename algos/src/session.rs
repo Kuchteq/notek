@@ -126,7 +126,7 @@ impl SessionMessage {
                     .next()
                     .unwrap();
                 let pid_depth = cur.read_u8().unwrap();
-                let pid = Pid::from_reader(&mut cur, pid_depth as usize);
+                let pid = Pid::read_bytes(&mut cur, pid_depth as usize);
                 SessionMessage::Insert {
                     site: site,
                     pid: pid,
@@ -136,7 +136,7 @@ impl SessionMessage {
             66u8 => {
                 let site = cur.read_u8().unwrap();
                 let pid_depth = cur.read_u8().unwrap();
-                let pid = Pid::from_reader(&mut cur, pid_depth as usize);
+                let pid = Pid::read_bytes(&mut cur, pid_depth as usize);
                 SessionMessage::Delete {
                     site: site,
                     pid: pid,

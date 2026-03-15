@@ -151,7 +151,7 @@ impl Doc {
                 .next()
                 .unwrap();
             let pid_depth = reader.read_u8().unwrap();
-            let pid = Pid::from_reader(reader, pid_depth.into());
+            let pid = Pid::read_bytes(reader, pid_depth.into());
             content.insert(pid, DocChar(data));
         }
 
@@ -188,7 +188,7 @@ impl Doc {
                 Err(e) => return Err(e).context("Failed to read pid depth"),
             };
 
-            let pid = Pid::from_reader(reader, pid_depth.into());
+            let pid = Pid::read_bytes(reader, pid_depth.into());
 
             content.insert(pid, DocChar(data));
         }

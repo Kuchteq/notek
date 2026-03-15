@@ -2,18 +2,26 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 
 use algos::session::SessionMessage;
+use algos::sync::SyncRequests;
 
 use crate::editor_message::EditorMessage;
-use crate::state::State;
+use crate::state::{ConnectionStatus, State};
 
 pub enum AppEvent {
     FileCreated(PathBuf),
     FileRenamed { from: PathBuf, to: PathBuf },
     EditorMsg(EditorMessage),
     ClientDisconnected,
+    ServerConnected,
+    ServerDisconnected,
 }
 
-pub fn run_app(rx: Receiver<AppEvent>, state: &mut State, session_tx: Sender<SessionMessage>) {
+pub fn run_app(
+    rx: Receiver<AppEvent>,
+    state: &mut State,
+    session_tx: Sender<SessionMessage>,
+    sync_tx: Sender<SyncRequests>,
+) {
     // Main event loop — State stays here, single-threaded mutations
     while let Ok(event) = rx.recv() {
         match event {
@@ -26,33 +34,29 @@ pub fn run_app(rx: Receiver<AppEvent>, state: &mut State, session_tx: Sender<Ses
                         continue;
                     }
                 };
-                // TODO use the sync protocol instead of session one
-                let msg = SessionMessage::Start {
+                let inserts: Vec<_> = doc
+                    .get_doc()
+                    .content
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.0))
+                    .collect();
+                let msg = SyncRequests::SyncDocUpsert {
                     document_id: doc.id,
-                    last_sync_time: 0,
                     name: Some(path),
+                    last_sync_time: 0,
+                    inserts,
+                    deletes: Vec::new(),
                 };
-                let _ = session_tx.send(msg);
-                for (k, v) in doc.get_doc().content.iter() {
-                    let msg = SessionMessage::Insert {
-                        site: 0,
-                        pid: k.clone(),
-                        c: v.0,
-                    };
-                    let _ = session_tx.send(msg);
-                }
+                let _ = sync_tx.send(msg);
             }
             AppEvent::FileRenamed { from, to } => {
                 state.move_doc(from, to.clone());
-                // TODO use the sync protocol/some other call as start isn't meant to really do that
-                // but change name is missing the id and it's also a session call
                 let doc_id = state.get_doc_by_name(&to).id;
-                let msg = SessionMessage::Start {
+                let msg = SyncRequests::DocNameChange {
                     document_id: doc_id,
-                    last_sync_time: 0,
-                    name: Some(to),
+                    name: to,
                 };
-                let _ = session_tx.send(msg);
+                let _ = sync_tx.send(msg);
             }
             AppEvent::EditorMsg(msg) => match msg {
                 EditorMessage::ChooseDocument(doc_name) => {
@@ -86,6 +90,14 @@ pub fn run_app(rx: Receiver<AppEvent>, state: &mut State, session_tx: Sender<Ses
             },
             AppEvent::ClientDisconnected => {
                 println!("Client disconnected");
+            }
+            AppEvent::ServerConnected => {
+                println!("Connected to sync server");
+                state.connection_status = ConnectionStatus::Connected;
+            }
+            AppEvent::ServerDisconnected => {
+                println!("Disconnected from sync server");
+                state.connection_status = ConnectionStatus::Disconnected;
             }
         }
     }

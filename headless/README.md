@@ -48,3 +48,10 @@ Hence, it all depends on the latency of the unix socket communication between th
 You start the client on the folder where you keep your notes. It makes the inital call to the server and pulls the changes.
 - Editing an existing file/Creating a new file
 Enter it with your editor, and the editor sends a **3. Chose document** message to the headless client. The client translates the document name to document_id by looking it up from the .md.structure file. If it's a new document, it will create one instead. Then the headless client knows that all the upcoming inserts and deletes belong to that document.
+
+# Offline first operation:
+Let's consider the possible document lifecycle:
+1. A completely new document gets moved/saved in the notek's directory:
+- If we're online, the .md.structure file gets created immedieately for it. If we're offline, this creation gets postponed untill being online as the longer the document is, the more optimized notek's crappy logoot crdt data structure is (more even spaces between the pids).
+2. An already existing document gets modified:
+- The client will make a list of edits that happen and keep it in an array, if we quit/interrupt the client before coming online, they will be put in .md.oplog file. Otherwise those edit events come and get instantly consumed by an outgoing connection for the session.

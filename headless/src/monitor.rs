@@ -87,7 +87,7 @@ pub fn monitor_updates(tx: Sender<AppEvent>, base_dir: &Path) {
                 continue;
             }
 
-            // Only care about .md files (skip .md.structure and others)
+            // Only care about .md files (skip hidden .md.structure files and others)
             let is_md = rel_path.extension().and_then(|s| s.to_str()) == Some("md");
             if !is_md {
                 continue;

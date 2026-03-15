@@ -32,7 +32,7 @@ impl Pid {
         self.0.len()
     }
 
-    pub fn from_reader<R: Read>(reader: &mut R, depth: usize) -> Self {
+    pub fn read_bytes<R: Read>(reader: &mut R, depth: usize) -> Self {
         let mut positions = Vec::with_capacity(depth);
 
         for _ in 0..depth {
