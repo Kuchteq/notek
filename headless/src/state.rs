@@ -106,9 +106,10 @@ impl State {
         self.docs[self.current_doc].delete_byte_range(start as usize, len as usize)
     }
 
-    pub fn flush_current_doc(&self) -> Result<()> {
-        let current_doc = &self.docs[self.current_doc];
+    pub fn flush_current_doc(&mut self) -> Result<()> {
+        let current_doc = &mut self.docs[self.current_doc];
         current_doc.flush()?;
+        current_doc.flush_oplog()?;
         Ok(())
     }
 

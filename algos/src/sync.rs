@@ -34,7 +34,6 @@ pub enum SyncRequests {
     },
 }
 
-
 impl SyncRequests {
     pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
@@ -138,8 +137,9 @@ impl SyncRequests {
 
                 let name = if name_buf.len() > 1 {
                     name_buf.pop();
-                    Some(PathBuf::from(String::from_utf8(name_buf)
-                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))?))
+                    Some(PathBuf::from(String::from_utf8(name_buf).map_err(
+                        |_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"),
+                    )?))
                 } else {
                     None
                 };
@@ -187,10 +187,10 @@ impl SyncRequests {
                 reader.read_until(b'\n', &mut name_buf)?;
                 name_buf.pop();
 
-                let name = PathBuf::from(
-                    String::from_utf8(name_buf)
-                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))?,
-                );
+                let name =
+                    PathBuf::from(String::from_utf8(name_buf).map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8")
+                    })?);
 
                 SyncRequests::DocNameChange { document_id, name }
             }
@@ -272,6 +272,72 @@ pub enum DocOp {
 }
 
 impl DocOp {
+    pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut tag = [0u8; 1];
+        reader.read_exact(&mut tag)?;
+
+        match tag[0] {
+            0 => {
+                let mut len_buf = [0u8; 1];
+                reader.read_exact(&mut len_buf)?;
+                let char_len = len_buf[0] as usize;
+
+                let mut char_buf = vec![0u8; char_len];
+                reader.read_exact(&mut char_buf)?;
+
+                let ch = std::str::from_utf8(&char_buf)
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8 in oplog")
+                    })?
+                    .chars()
+                    .next()
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Empty char in oplog")
+                    })?;
+
+                let mut depth_buf = [0u8; 1];
+                reader.read_exact(&mut depth_buf)?;
+                let pid = Pid::read_bytes(reader, depth_buf[0] as usize);
+
+                Ok(DocOp::Insert(pid, ch))
+            }
+            1 => {
+                let mut depth_buf = [0u8; 1];
+                reader.read_exact(&mut depth_buf)?;
+                let pid = Pid::read_bytes(reader, depth_buf[0] as usize);
+
+                Ok(DocOp::Delete(pid))
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unknown DocOp tag in oplog",
+            )),
+        }
+    }
+
+    /// Write a self-describing op to the oplog (always includes depth byte).
+    pub fn write_to<W: Write>(&self, mut w: W) -> io::Result<()> {
+        match self {
+            DocOp::Insert(pid, ch) => {
+                w.write_all(&[0])?;
+                let mut cbuf = [0u8; 4];
+                let encoded = ch.encode_utf8(&mut cbuf);
+                w.write_all(&[encoded.len() as u8])?;
+                w.write_all(encoded.as_bytes())?;
+                w.write_all(&[pid.0.len() as u8])?;
+                pid.write_bytes(&mut w)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            }
+            DocOp::Delete(pid) => {
+                w.write_all(&[1])?;
+                w.write_all(&[pid.0.len() as u8])?;
+                pid.write_bytes(&mut w)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn serialize_into<W: Write>(&self, mut w: W) -> Result<()> {
         match self {
             DocOp::Insert(pid, ch) => {
