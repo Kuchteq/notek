@@ -21,6 +21,11 @@ async fn main() -> anyhow::Result<()> {
     println!("Listening on 0.0.0.0:9001");
 
     let (tx, rx) = mpsc::channel(100); // shared channel to state manager
+    tokio::spawn(async {
+        tokio::signal::ctrl_c().await.unwrap();
+        println!("Shutting down...");
+        std::process::exit(0);
+    });
 
     tokio::spawn(async {
         let mut state = State::init(PathBuf::from("./").as_path()).unwrap();

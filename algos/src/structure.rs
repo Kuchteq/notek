@@ -15,6 +15,14 @@ use crate::{
     sync::DocOp,
 };
 
+/// Given a base name like `school/math/note`, returns `school/math/.note.md.structure`.
+fn hidden_structure_path(name: &Path) -> PathBuf {
+    let parent = name.parent().unwrap_or(Path::new(""));
+    let stem = name.file_stem().unwrap_or_default();
+    let hidden_name = format!(".{}.md.structure", stem.to_string_lossy());
+    parent.join(hidden_name)
+}
+
 #[derive(Debug)]
 pub struct DocStructure {
     pub id: u128,
@@ -98,6 +106,10 @@ impl DocStructure {
             state: DocState::Cached(Doc::new(&contents)),
         };
 
+        if let Some(parent) = name.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
         ds.flush()?;
         Ok(ds)
     }
@@ -128,7 +140,7 @@ impl DocStructure {
     }
 
     fn get_structure_path(&self) -> PathBuf {
-        self.name.with_extension("md.structure")
+        hidden_structure_path(&self.name)
     }
 
     fn get_plainmd_path(&self) -> PathBuf {
@@ -152,7 +164,7 @@ impl DocStructure {
     }
 
     pub fn load_or_create(name: &Path, upsertid: Option<u128>) -> Result<Self> {
-        let structure_path = name.with_extension("md.structure");
+        let structure_path = hidden_structure_path(name);
 
         if structure_path.exists() {
             Self::read_existing(&structure_path, name)
@@ -165,10 +177,7 @@ impl DocStructure {
     pub fn set_name(&mut self, name: &Path) -> Result<()> {
         println!("old {:?} new {:?}", self.name, name);
 
-        fs::rename(
-            self.get_structure_path(),
-            name.with_extension("md.structure"),
-        )?;
+        fs::rename(self.get_structure_path(), hidden_structure_path(name))?;
         fs::rename(self.get_plainmd_path(), name.with_extension("md"))?;
 
         self.name = name.to_path_buf();
@@ -176,11 +185,11 @@ impl DocStructure {
     }
 
     /// Update the name after an external rename of the .md file.
-    /// Only renames the .md.structure companion file (the .md was already
+    /// Only renames the hidden .md.structure companion file (the .md was already
     /// renamed by the OS / another process).
     pub fn update_name_after_external_rename(&mut self, new_name: &Path) -> Result<()> {
         let old_structure = self.get_structure_path();
-        let new_structure = new_name.with_extension("md.structure");
+        let new_structure = hidden_structure_path(new_name);
 
         // Ensure parent directories exist (e.g. moving note.md -> school/math/note.md)
         if let Some(parent) = new_structure.parent() {

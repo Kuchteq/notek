@@ -150,10 +150,12 @@ impl State {
                 StateCommand::UpsertDoc { name, document_id } => {
                     if let None = self.by_id.get(&document_id) {
                         self.add_doc(name, Some(document_id));
+                    } else {
+                        self.get_structure(document_id).update_name_after_external_rename(name.as_path());
                     }
                 }
                 StateCommand::ChangeName { document_id, name } => {
-                    self.get_structure(document_id).set_name(&name);
+                    self.get_structure(document_id).update_name_after_external_rename(name.as_path());
                 }
                 StateCommand::FlushChanges { document_id } => {
                     println!("flushed!");
