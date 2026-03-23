@@ -13,6 +13,7 @@ use tungstenite::{connect, Message};
 use crate::app::{run_app, AppEvent};
 use crate::editor_message::EditorMessage;
 use crate::monitor::monitor_updates;
+use crate::oplog::Oplog;
 use crate::state::State;
 use crate::sync::handle_sync_communication;
 
@@ -21,14 +22,7 @@ mod editor_message;
 mod monitor;
 mod state;
 mod sync;
-
-fn handle_server_communication(rx: mpsc::Receiver<SessionMessage>) {
-    let (mut ws, _) = connect("ws://127.0.0.1:9001").unwrap();
-    while let Ok(cmd) = rx.recv() {
-        let msg = Message::from(cmd.serialize());
-        let _ = ws.send(msg);
-    }
-}
+mod oplog;
 
 fn accept_connections(listener: UnixListener, tx: Sender<AppEvent>) {
     for stream in listener.incoming() {
@@ -99,14 +93,15 @@ fn main() -> std::io::Result<()> {
     let listener = UnixListener::bind(socket_path)?;
     println!("Server listening on {}", socket_path);
 
-    let (session_tx, session_rx) = mpsc::channel::<SessionMessage>();
+    let (oplog_tx, oplog_rx) = mpsc::channel::<SessionMessage>();
     let (sync_tx, sync_rx) = mpsc::channel::<SyncRequests>();
     let (tx, rx) = mpsc::channel::<AppEvent>();
 
     let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
+    let mut oplog = Oplog::init().unwrap();
 
     thread::spawn(move || {
-        handle_server_communication(session_rx);
+        oplog.run(oplog_rx);
     });
 
     let sync_app_tx = tx.clone();
@@ -125,7 +120,7 @@ fn main() -> std::io::Result<()> {
         accept_connections(listener, accept_tx);
     });
 
-    run_app(rx, &mut state, session_tx, sync_tx);
+    run_app(rx, &mut state, oplog_tx, sync_tx);
 
     Ok(())
 }

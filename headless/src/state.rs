@@ -109,7 +109,6 @@ impl State {
     pub fn flush_current_doc(&mut self) -> Result<()> {
         let current_doc = &mut self.docs[self.current_doc];
         current_doc.flush()?;
-        current_doc.flush_oplog()?;
         Ok(())
     }
 

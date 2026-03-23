@@ -23,21 +23,12 @@ fn hidden_structure_path(name: &Path) -> PathBuf {
     parent.join(hidden_name)
 }
 
-/// Given a base name like `school/math/note.md`, returns `school/math/.note.md.oplog`.
-fn hidden_oplog_path(name: &Path) -> PathBuf {
-    let parent = name.parent().unwrap_or(Path::new(""));
-    let stem = name.file_stem().unwrap_or_default();
-    let hidden_name = format!(".{}.md.oplog", stem.to_string_lossy());
-    parent.join(hidden_name)
-}
-
 #[derive(Debug)]
 pub struct DocStructure {
     pub id: u128,
     pub last_modified: u64,
     pub name: PathBuf,
     pub state: DocState,
-    pub oplog: Vec<DocOp>,
 }
 
 impl DocStructure {
@@ -80,9 +71,6 @@ impl DocStructure {
             DocState::Missing => todo!(),
             DocState::Cached(doc) => {
                 let inserted = doc.insert_text_at_bytepos(pos, text);
-                for (pid, c) in &inserted {
-                    self.oplog.push(DocOp::Insert(pid.clone(), *c));
-                }
                 inserted
             }
         }
@@ -93,9 +81,6 @@ impl DocStructure {
             DocState::Missing => todo!(),
             DocState::Cached(doc) => {
                 let deleted = doc.delete_byte_range(start_byte, len_byte);
-                for pid in &deleted {
-                    self.oplog.push(DocOp::Delete(pid.clone()));
-                }
                 deleted
             }
         }
@@ -125,7 +110,6 @@ impl DocStructure {
             name: name.to_path_buf(),
             last_modified: timestamp_ms,
             state: DocState::Cached(Doc::new(&contents)),
-            oplog: Vec::new(),
         };
 
         if let Some(parent) = name.parent() {
@@ -155,77 +139,9 @@ impl DocStructure {
         Ok(())
     }
 
-    /// Append current in-memory oplog to the on-disk oplog file, then clear memory.
-    pub fn flush_oplog(&mut self) -> Result<()> {
-        if self.oplog.is_empty() {
-            return Ok(());
-        }
-        let path = self.get_oplog_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
-        let mut writer = BufWriter::new(file);
-        for op in &self.oplog {
-            op.write_to(&mut writer)?;
-        }
-        writer.flush()?;
-        self.oplog.clear();
-        Ok(())
-    }
-
-    /// Load oplog from disk. Returns empty vec if file doesn't exist or is unreadable.
-    fn load_oplog(name: &Path) -> Vec<DocOp> {
-        let path = hidden_oplog_path(name);
-        let file = match File::open(&path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-        let mut reader = BufReader::new(file);
-        let mut ops = Vec::new();
-        loop {
-            match DocOp::read_from(&mut reader) {
-                Ok(op) => ops.push(op),
-                Err(_) => break,
-            }
-        }
-        ops
-    }
-
-    /// Drain all ops from the oplog, returning them and clearing both memory and disk.
-    pub fn drain_oplog(&mut self) -> Result<Vec<DocOp>> {
-        // First flush any in-memory ops to disk so we capture everything
-        self.flush_oplog()?;
-        // Reload from disk to get the full set
-        let ops = Self::load_oplog(&self.name);
-        // Clear the on-disk file
-        self.clear_oplog_file()?;
-        Ok(ops)
-    }
-
-    /// Remove the oplog file from disk.
-    fn clear_oplog_file(&self) -> Result<()> {
-        let path = self.get_oplog_path();
-        if path.exists() {
-            fs::remove_file(&path)?;
-        }
-        Ok(())
-    }
-
-    fn get_oplog_path(&self) -> PathBuf {
-        hidden_oplog_path(&self.name)
-    }
-
     pub fn delete_files(&self) -> Result<()> {
         fs::remove_file(self.get_structure_path())?;
         fs::remove_file(self.get_plainmd_path())?;
-        let oplog_path = self.get_oplog_path();
-        if oplog_path.exists() {
-            fs::remove_file(&oplog_path)?;
-        }
         Ok(())
     }
 
@@ -245,14 +161,11 @@ impl DocStructure {
         let last_modified = reader.read_u64::<LittleEndian>()?;
         let doc = Doc::from_reader_eof(&mut reader)?;
 
-        let oplog = Self::load_oplog(name);
-
         Ok(DocStructure {
             id,
             name: name.to_path_buf(),
             last_modified,
             state: DocState::Cached(doc),
-            oplog,
         })
     }
 
@@ -273,12 +186,6 @@ impl DocStructure {
         fs::rename(self.get_structure_path(), hidden_structure_path(name))?;
         fs::rename(self.get_plainmd_path(), name.with_extension("md"))?;
 
-        let old_oplog = self.get_oplog_path();
-        let new_oplog = hidden_oplog_path(name);
-        if old_oplog.exists() {
-            fs::rename(&old_oplog, &new_oplog)?;
-        }
-
         self.name = name.to_path_buf();
         Ok(())
     }
@@ -297,12 +204,6 @@ impl DocStructure {
 
         if old_structure.exists() {
             fs::rename(&old_structure, &new_structure)?;
-        }
-
-        let old_oplog = self.get_oplog_path();
-        let new_oplog = hidden_oplog_path(new_name);
-        if old_oplog.exists() {
-            fs::rename(&old_oplog, &new_oplog)?;
         }
 
         self.name = new_name.to_path_buf();

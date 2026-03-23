@@ -19,7 +19,7 @@ pub enum AppEvent {
 pub fn run_app(
     rx: Receiver<AppEvent>,
     state: &mut State,
-    session_tx: Sender<SessionMessage>,
+    oplog_tx: Sender<SessionMessage>,
     sync_tx: Sender<SyncRequests>,
 ) {
     // Main event loop — State stays here, single-threaded mutations
@@ -66,14 +66,14 @@ pub fn run_app(
                         last_sync_time: 0,
                         name: None,
                     };
-                    let _ = session_tx.send(msg);
+                    let _ = oplog_tx.send(msg);
                 }
                 EditorMessage::Insert(pos, text) => {
                     println!("Text received {} {}", pos, text);
                     let inserted = state.insert_in_current_doc(pos, &text);
                     for (pid, c) in inserted {
                         let msg = SessionMessage::Insert { site: 0, pid, c };
-                        let _ = session_tx.send(msg);
+                        let _ = oplog_tx.send(msg);
                     }
                 }
                 EditorMessage::Delete(start, len) => {
@@ -81,7 +81,7 @@ pub fn run_app(
                     let deleted = state.delete_in_current_doc(start, len);
                     for pid in deleted {
                         let msg = SessionMessage::Delete { site: 0, pid };
-                        let _ = session_tx.send(msg);
+                        let _ = oplog_tx.send(msg);
                     }
                 }
                 EditorMessage::Flush => {
