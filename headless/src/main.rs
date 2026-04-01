@@ -13,7 +13,8 @@ use tungstenite::{connect, Message};
 use crate::app::{run_app, AppEvent};
 use crate::editor_message::EditorMessage;
 use crate::monitor::monitor_updates;
-use crate::oplog::Oplog;
+use crate::oplog::{Oplog, OplogMsg};
+use crate::session::handle_session_communication;
 use crate::state::State;
 use crate::sync::handle_sync_communication;
 
@@ -23,6 +24,7 @@ mod monitor;
 mod state;
 mod sync;
 mod oplog;
+mod session;
 
 fn accept_connections(listener: UnixListener, tx: Sender<AppEvent>) {
     for stream in listener.incoming() {
@@ -93,20 +95,28 @@ fn main() -> std::io::Result<()> {
     let listener = UnixListener::bind(socket_path)?;
     println!("Server listening on {}", socket_path);
 
-    let (oplog_tx, oplog_rx) = mpsc::channel::<SessionMessage>();
-    let (sync_tx, sync_rx) = mpsc::channel::<SyncRequests>();
     let (tx, rx) = mpsc::channel::<AppEvent>();
-
-    let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
+    let (oplog_tx, oplog_rx) = mpsc::channel::<OplogMsg>();
     let mut oplog = Oplog::init().unwrap();
 
-    thread::spawn(move || {
-        oplog.run(oplog_rx);
-    });
-
+    let (sync_tx, sync_rx) = mpsc::channel::<SyncRequests>();
     let sync_app_tx = tx.clone();
     thread::spawn(move || {
         handle_sync_communication(sync_rx, sync_app_tx);
+    });
+
+    let (session_tx, session_rx) = mpsc::channel::<SessionMessage>();
+    let session_app_tx = tx.clone();
+    thread::spawn(move || {
+        handle_session_communication(session_rx, session_app_tx);
+    });
+
+
+    let mut state = State::init(PathBuf::from("./").as_path()).unwrap();
+
+    let oplog_sync_tx = sync_tx.clone();
+    thread::spawn(move || {
+        oplog.run(oplog_rx, oplog_sync_tx, session_tx);
     });
 
     let base_dir = state.base_dir.clone();

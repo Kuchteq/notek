@@ -22,7 +22,8 @@ pub struct State {
     pub by_time: BTreeMap<u64, usize>,
     pub by_id: HashMap<u128, usize>,
     pub by_name: HashMap<PathBuf, usize>,
-    pub connection_status: ConnectionStatus,
+    // pub sync_connection_status: ConnectionStatus,
+    // pub session_connection_status: ConnectionStatus,
 }
 
 impl State {
@@ -42,7 +43,8 @@ impl State {
             by_time: BTreeMap::new(),
             by_id: HashMap::new(),
             by_name: HashMap::new(),
-            connection_status: ConnectionStatus::Disconnected,
+            // sync_connection_status: ConnectionStatus::Disconnected,
+            // session_connection_status: ConnectionStatus::Disconnected,
         };
 
         s.scan_dir_recursive(&s.base_dir.clone())?;

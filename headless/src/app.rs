@@ -5,6 +5,7 @@ use algos::session::SessionMessage;
 use algos::sync::SyncRequests;
 
 use crate::editor_message::EditorMessage;
+use crate::oplog::OplogMsg;
 use crate::state::{ConnectionStatus, State};
 
 pub enum AppEvent {
@@ -12,14 +13,16 @@ pub enum AppEvent {
     FileRenamed { from: PathBuf, to: PathBuf },
     EditorMsg(EditorMessage),
     ClientDisconnected,
-    ServerConnected,
-    ServerDisconnected,
+    SyncConnected,
+    SyncDisconnected,
+    SessionConnected,
+    SessionDisconnected,
 }
 
 pub fn run_app(
     rx: Receiver<AppEvent>,
     state: &mut State,
-    oplog_tx: Sender<SessionMessage>,
+    oplog_tx: Sender<OplogMsg>,
     sync_tx: Sender<SyncRequests>,
 ) {
     // Main event loop — State stays here, single-threaded mutations
@@ -66,14 +69,14 @@ pub fn run_app(
                         last_sync_time: 0,
                         name: None,
                     };
-                    let _ = oplog_tx.send(msg);
+                    let _ = oplog_tx.send(OplogMsg::SessionMessage(msg));
                 }
                 EditorMessage::Insert(pos, text) => {
                     println!("Text received {} {}", pos, text);
                     let inserted = state.insert_in_current_doc(pos, &text);
                     for (pid, c) in inserted {
                         let msg = SessionMessage::Insert { site: 0, pid, c };
-                        let _ = oplog_tx.send(msg);
+                        let _ = oplog_tx.send(OplogMsg::SessionMessage(msg));
                     }
                 }
                 EditorMessage::Delete(start, len) => {
@@ -81,7 +84,7 @@ pub fn run_app(
                     let deleted = state.delete_in_current_doc(start, len);
                     for pid in deleted {
                         let msg = SessionMessage::Delete { site: 0, pid };
-                        let _ = oplog_tx.send(msg);
+                        let _ = oplog_tx.send(OplogMsg::SessionMessage(msg));
                     }
                 }
                 EditorMessage::Flush => {
@@ -91,14 +94,18 @@ pub fn run_app(
             AppEvent::ClientDisconnected => {
                 println!("Client disconnected");
             }
-            AppEvent::ServerConnected => {
+            AppEvent::SyncConnected => {
                 println!("Connected to sync server");
-                state.connection_status = ConnectionStatus::Connected;
             }
-            AppEvent::ServerDisconnected => {
+            AppEvent::SyncDisconnected => {
                 println!("Disconnected from sync server");
-                state.connection_status = ConnectionStatus::Disconnected;
             }
+            AppEvent::SessionConnected => {
+                oplog_tx.send(OplogMsg::SessionAvailable);
+            },
+            AppEvent::SessionDisconnected => {
+                oplog_tx.send(OplogMsg::SessionDown);
+            },
         }
     }
 }

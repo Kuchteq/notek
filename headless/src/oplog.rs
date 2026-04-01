@@ -4,18 +4,33 @@ use std::{
     io::{BufReader, BufWriter, Write},
     net::TcpStream,
     path::{Path, PathBuf},
-    sync::mpsc::Receiver,
+    sync::mpsc::{Receiver, Sender},
     time::Duration,
     u128,
 };
 
-use algos::{session::SessionMessage, sync::DocOp};
+use algos::{
+    pid::Pid,
+    session::SessionMessage,
+    sync::{DocOp, SyncRequests},
+};
 use anyhow::Result;
 use tungstenite::{Message, WebSocket, connect, stream::MaybeTlsStream};
 
 pub struct Oplog {
     pub current_document: u128,
+    pub current_log: VecDeque<DocOp>,
     pub log: BTreeMap<u128, VecDeque<DocOp>>,
+    pub session_available: bool,
+    pub sync_available: bool,
+}
+
+pub enum OplogMsg {
+    SessionMessage(SessionMessage),
+    SyncAvailable,
+    SyncDown,
+    SessionAvailable,
+    SessionDown,
 }
 
 /// Given a base name like `school/math/note.md`, returns `school/math/.note.md.oplog`.
@@ -30,32 +45,105 @@ impl Oplog {
     pub fn init() -> Result<Self> {
         Ok(Oplog {
             current_document: u128::MAX,
+            current_log: VecDeque::new(),
             log: BTreeMap::new(),
+            session_available: false,
+            sync_available: false,
         })
     }
 
-    pub fn run(&mut self, rx: Receiver<SessionMessage>) {
-        let (mut ws, _) = connect("ws://127.0.0.1:9001").unwrap();
-        // let msg = Message::from(cmd.serialize());
-        // let _ = ws.send(msg);
-
+    pub fn run(
+        &mut self,
+        rx: Receiver<OplogMsg>,
+        sync_tx: Sender<SyncRequests>,
+        session_tx: Sender<SessionMessage>,
+    ) {
         loop {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(event) => match event {
-                    SessionMessage::Insert { pid, c, .. } => {
-                        let log = self.log.get_mut(&self.current_document).unwrap();
-                        log.push_back(DocOp::Insert(pid, c));
+                    OplogMsg::SessionMessage(msg) => {
+                        match msg {
+                            SessionMessage::Insert { pid, c, .. } => {
+                                if self.session_available {
+                                    session_tx.send(SessionMessage::Insert { site: 0, pid, c });
+                                } else {
+                                    self.current_log.push_back(DocOp::Insert(pid, c));
+                                }
+                            }
+                            SessionMessage::Start { document_id, .. } => {
+                                if document_id != self.current_document {
+                                    if self.current_document != u128::MAX
+                                        && self.current_log.len() > 0
+                                    {
+                                        self.log.insert(
+                                            self.current_document,
+                                            std::mem::take(&mut self.current_log),
+                                        );
+                                    }
+                                    // If we already have some previous oplog existing for the
+                                    // document we started editing, then take it from the current
+                                    // one
+                                    if let Some(l) = self.log.remove(&document_id) {
+                                        self.current_log = l;
+                                    }
+
+                                    self.current_document = document_id;
+                                    if self.session_available && self.current_document != u128::MAX
+                                    {
+                                        session_tx.send(msg);
+                                    }
+                                }
+                                // self.log.insert(document_id, VecDeque::new());
+                            }
+                            SessionMessage::Delete { site, pid } => {
+                                if self.session_available {
+                                    session_tx.send(SessionMessage::Delete { site, pid });
+                                } else {
+                                    self.current_log.push_back(DocOp::Delete(pid));
+                                }
+                            }
+                            SessionMessage::ChangeName { name } => todo!(),
+                        }
+                        // let log = self.log.get_mut(&self.current_document).unwrap();
+                        // log.push_back(DocOp::Insert(pid, c));
                     }
-                    SessionMessage::Start { document_id, .. } => {
-                        self.current_document = document_id;
-                        self.log.insert(document_id, VecDeque::new());
-                        ws.send(Message::from(event.serialize()));
+                    OplogMsg::SessionAvailable => {
+                        self.session_available = true;
+                        if self.current_document != u128::MAX {
+                            session_tx.send(SessionMessage::Start {
+                                document_id: self.current_document,
+                                last_sync_time: 0,
+                                name: None,
+                            });
+                        }
                     }
-                    SessionMessage::Delete { site, pid } => {
-                        let log = self.log.get_mut(&self.current_document).unwrap();
-                        log.push_back(DocOp::Delete(pid));
+                    OplogMsg::SyncAvailable => {
+                        for (did, l) in std::mem::take(&mut self.log) {
+                            let mut inserts = Vec::new();
+                            let mut deletes = Vec::new();
+
+                            for item in l {
+                                match item {
+                                    DocOp::Insert(pid, c) => inserts.push((pid, c)),
+                                    DocOp::Delete(pid) => deletes.push(pid),
+                                    _ => {}
+                                }
+                            }
+
+                            let req = SyncRequests::SyncDocUpsert {
+                                document_id: did,
+                                name: None,
+                                last_sync_time: 0,
+                                inserts: inserts,
+                                deletes: deletes,
+                            };
+                            sync_tx.send(req);
+                        }
                     }
-                    SessionMessage::ChangeName { name } => todo!(),
+                    OplogMsg::SyncDown => todo!(),
+                    OplogMsg::SessionDown => {
+                        self.session_available = false;
+                    }
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     // no message → fall through to sending
@@ -63,18 +151,23 @@ impl Oplog {
                 Err(_) => break,
             }
 
-            self.flush_to_server(&mut ws);
+            // self.flush_to_server(&mut ws);
         }
     }
 
+    // pub fn handle_start(&mut self, document_id: u128) {}
     pub fn flush_to_server(&mut self, ws: &mut WebSocket<MaybeTlsStream<TcpStream>>) {
         if let Some(queue) = self.log.get_mut(&self.current_document) {
             if let Some(op) = queue.pop_front() {
                 let msg = match op {
-                    DocOp::Insert(pid, c) => SessionMessage::Insert { site: 0, pid: pid, c: c },
-                    DocOp::Delete(pid) => SessionMessage::Delete { site: 0, pid: pid }
+                    DocOp::Insert(pid, c) => SessionMessage::Insert {
+                        site: 0,
+                        pid: pid,
+                        c: c,
+                    },
+                    DocOp::Delete(pid) => SessionMessage::Delete { site: 0, pid: pid },
                 };
-                
+
                 if ws.send(Message::from(msg.serialize())).is_ok() {
                     queue.pop_front();
                 }
